@@ -1,0 +1,3 @@
+classdef MicroSaccade < Saccade
+    
+end

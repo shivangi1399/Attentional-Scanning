@@ -1,0 +1,16 @@
+# Excluded folders
+Elena/
+eye_data/
+Compare_methods/
+masters_code/
+
+# Binary/data files
+*.mat
+*.fig
+*.asv
+*.dat
+
+# Python cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
