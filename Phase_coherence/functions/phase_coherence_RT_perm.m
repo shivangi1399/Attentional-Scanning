@@ -22,7 +22,7 @@ rt    = rt(valid);
 % Skip channel if no valid RT values
 if isempty(rt)
     fprintf('Channel %d skipped (no valid RT)\n', ichan);
-    continue
+    return
 end
 
 nFreq = size(phase, 2);

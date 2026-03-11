@@ -21,8 +21,8 @@ phase = phase(valid, :);
 rt    = rt(valid);
 
 if isempty(rt)
-        fprintf('Channel %d skipped (no valid RT)\n', ichan);
-        continue
+    fprintf('Channel %d skipped (no valid RT)\n', ichan);
+    return
 end
 
 nFreq = size(phase, 2);
