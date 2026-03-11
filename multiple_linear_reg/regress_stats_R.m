@@ -38,7 +38,7 @@ amp_all = ph_comb.amp_all;   % trials x freqs x channels
 reg_results = struct();
 
 %% Loop over dependent variables
-for d = 2:length(Y_vars)
+for d = 1:length(Y_vars)
     depVarName = Y_vars{d};
     fprintf('Processing %s...\n', depVarName);
     

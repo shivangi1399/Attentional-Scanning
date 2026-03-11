@@ -10,7 +10,7 @@ clc
 
 %% Load data
 
-info_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/cp10_till_100';
+info_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/multi_lin_reg/cp10_till_100';
 cd(info_folder)
 load('multi_regression_channelwise_R2.mat', 'reg_results');
 
