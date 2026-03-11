@@ -15,7 +15,7 @@ phase = ph_comb.phase_all(trial_idx, :, ichan);  % [nHits x nFreq]
 rt    = ph_comb.RT(trial_idx, ichan);             % [nHits x 1]
 
 % Skip channel if no valid RT values
-if isempty(phase)
+if isempty(rt)
     fprintf('Channel %d skipped (no valid RT)\n', ichan);
     return
 end
