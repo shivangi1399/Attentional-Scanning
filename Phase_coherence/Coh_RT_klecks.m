@@ -16,8 +16,8 @@ clc
 
 %% Settings
 
-data_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/multi_lin_reg/cp10_till_100';
-coh_folder  = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/phase_coherence/cp10_till_100';
+data_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/cp10_till_100';
+coh_folder  = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/phase_coherence/cp10_till_100';
 permut_n = 1000;
 nCh = 64;
 
@@ -65,8 +65,6 @@ cd(data_folder)
 load('ph_all_sess.mat')
 
 hit_idx  = find(ph_comb.RT_trialinfo(:,20) == 1);
-valid_rt = ~isnan(ph_comb.RT(hit_idx, 1));
-hit_idx  = hit_idx(valid_rt);
 nTrials  = length(hit_idx);
 
 perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
@@ -90,7 +88,7 @@ slurmfun(@phase_coherence_RT_perm, cfg, ...
 %  PLOTTING — Phase coherence with RT
 %  =====================================================================
 
-save_root_RT = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/coherence/hermes/cp10_till_100/RT/all_loc_difflev';
+save_root_RT = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_coherence/klecks/cp10_till_100/RT/all_loc_difflev';
 if ~exist(save_root_RT, 'dir'), mkdir(save_root_RT); end
 
 cd(coh_folder)
@@ -101,6 +99,13 @@ limit_maxc = nan(1, nCh);
 limit_maxp = nan(1, nCh);
 Coh_chan    = false(nCh, numel(freq));
 Phase_chan  = false(nCh, numel(freq));
+
+f1 = figure(1);
+set(f1, 'Units', 'centimeters', 'Position', [1 1 50 40]);
+set(f1, 'PaperUnits', 'centimeters', 'PaperSize', [50 40], 'PaperPosition', [0 0 50 40]);
+f2 = figure(2);
+set(f2, 'Units', 'centimeters', 'Position', [1 1 50 40]);
+set(f2, 'PaperUnits', 'centimeters', 'PaperSize', [50 40], 'PaperPosition', [0 0 50 40]);
 
 for ch = 1:nCh
     ch_folder = fullfile(output_coh_RT, 'all_loc_difflev', num2str(ch));
@@ -129,12 +134,12 @@ for ch = 1:nCh
 
     if isnan(limit_maxc(ch)) || isnan(limit_maxp(ch)), continue; end
 
-    f1 = figure(1);
+    figure(f1);
     subplot(8, 8, ch);
     plot_sig(freq, coh, limit_maxc(ch), 'Frequency', 'Coherence');
     title(['Ch ' num2str(ch)])
 
-    f2 = figure(2);
+    figure(f2);
     subplot(8, 8, ch);
     plot_sig(freq, phase_spec, limit_maxp(ch), 'Frequency', 'Phase spec');
     title(['Ch ' num2str(ch)])
@@ -143,13 +148,7 @@ for ch = 1:nCh
     Phase_chan(ch,:) = phase_spec >= limit_maxp(ch);
 end
 
-set(f1, 'Units', 'normalized', 'OuterPosition', [0 0 1 1]);
-set(f1, 'PaperPositionMode', 'auto');
-set(f1, 'Renderer', 'opengl');
 print(f1, fullfile(save_root_RT, 'all_channels_RT_coherence.pdf'), '-dpdf');
-set(f2, 'Units', 'normalized', 'OuterPosition', [0 0 1 1]);
-set(f2, 'PaperPositionMode', 'auto');
-set(f2, 'Renderer', 'opengl');
 print(f2, fullfile(save_root_RT, 'all_channels_RT_phase.pdf'), '-dpdf');
 
 % Summary heatmaps

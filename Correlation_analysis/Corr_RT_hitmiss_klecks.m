@@ -17,8 +17,8 @@ clc
 
 %% Settings
 
-data_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/multi_lin_reg/cp10_till_100';
-corr_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/phase_correlation/cp10_till_100';
+data_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/cp10_till_100';
+corr_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/phase_correlation/cp10_till_100';
 permut_n = 1000;
 nCh = 64;
 
@@ -176,7 +176,7 @@ slurmfun(@circlin_corr_hitmiss_perm, cfg, ...
 %  PLOTTING — Phase vs RT correlation
 %  =====================================================================
 
-save_root_RT = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/hermes/cp10_till_100/RT/all_loc_difflev';
+save_root_RT = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/klecks/cp10_till_100/RT/all_loc_difflev';
 if ~exist(save_root_RT, 'dir'), mkdir(save_root_RT); end
 
 cd(corr_folder)
@@ -263,7 +263,7 @@ end
 %  PLOTTING — Phase vs Hit/Miss (POS: Phase Opposition Sum)
 %  =====================================================================
 
-save_root_HM = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/hermes/cp10_till_100/hit_miss/all_loc_difflev';
+save_root_HM = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/klecks/cp10_till_100/hit_miss/all_loc_difflev';
 if ~exist(save_root_HM, 'dir'), mkdir(save_root_HM); end
 
 limit_max_pos = nan(1, nCh);
@@ -341,7 +341,7 @@ end
 %  PLOTTING — Phase vs Hit/Miss (ITC with inverted miss phases)
 %  =====================================================================
 
-save_root_ITC = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/hermes/cp10_till_100/hit_miss_itc/all_loc_difflev';
+save_root_ITC = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/klecks/cp10_till_100/hit_miss_itc/all_loc_difflev';
 if ~exist(save_root_ITC, 'dir'), mkdir(save_root_ITC); end
 
 limit_max_itc = nan(1, nCh);

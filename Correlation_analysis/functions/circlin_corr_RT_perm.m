@@ -15,12 +15,8 @@ load('ph_all_sess.mat')
 phase  = ph_comb.phase_all(trial_idx, :, ichan);  % [nHits x nFreq]
 rt     = ph_comb.RT(trial_idx, ichan);             % [nHits x 1]
 
-% Remove NaN RT trials (safety check)
-valid = ~isnan(rt);
-phase = phase(valid, :);
-rt    = rt(valid);
-
-if isempty(rt)
+% Skip channel if no valid RT values
+if isempty(phase)
     fprintf('Channel %d skipped (no valid RT)\n', ichan);
     return
 end
@@ -30,9 +26,15 @@ corr_perm   = nan(permut_n, nFreq);
 pvalue_perm = nan(permut_n, nFreq);
 
 for perm = 1:permut_n
-    rt_perm = rt(perm_indices{perm});  % shuffle RT
+    % Shuffle RT using shared permutation, then remove NaN entries
+    rt_perm = rt(perm_indices{perm});
+    
+    valid_perm = ~isnan(rt_perm); % Shuffled NaNs may land in valid positions — remove them
+    rt_clean   = rt_perm(valid_perm);
+    ph_clean   = phase(valid_perm, :);
+
     for foi = 1:nFreq
-        [corr_perm(perm, foi), pvalue_perm(perm, foi)] = circ_corrcl(phase(:, foi), rt_perm);
+        [corr_perm(perm, foi), pvalue_perm(perm, foi)] = circ_corrcl(ph_clean(:, foi), rt_clean);
     end
 end
 
