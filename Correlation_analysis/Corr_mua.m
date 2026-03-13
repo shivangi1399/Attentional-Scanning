@@ -15,11 +15,11 @@ addpath /mnt/hpc/projects/MWSampling/4Shivangi/software_folder/CircStat2012a
 clc
 
 %% Create data paths
+animalName = 'hermes';  % Change this to switch animal (e.g. 'klecks')
 
-datafolder   = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks';
+datafolder   = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
 
 cd(datafolder),
-animalName = 'klecks';
 temp = dir;
 session_names = [];
 ii = 0;
@@ -34,7 +34,7 @@ session_paths_files = [];
 session_paths_files = cellfun(@(x) fullfile(datafolder,x, 'clean_mua.mat'), session_names, 'uniform',0);
 
 phase_paths = cellfun(@(x) fullfile(datafolder, x,'Phase_analysis/hit_miss'),session_names, 'uniform',0);
-output_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/phase_correlation/cp10_till_100';
+output_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_correlation', 'cp10_till_100');
 permut_n = 1000;
 
 %% Correlation all locations and difficulty levels %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -347,7 +347,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Plotting all locations and difficulty levels
 
-save_root = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/klecks/cp10_till_100/mua/all_loc_difflev';
+save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation', animalName, 'cp10_till_100', 'mua', 'all_loc_difflev');
 if ~exist(save_root, 'dir')
     mkdir(save_root);
 end
@@ -463,7 +463,7 @@ freq = frequency;
 nCh = 64;
 
 % Folder to save all figures
-save_root = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/klecks/cp10_till_100/mua/loc_difflev/all_dlev';
+save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation', animalName, 'cp10_till_100', 'mua', 'loc_difflev', 'all_dlev');
 if ~exist(save_root, 'dir')
     mkdir(save_root);
 end
@@ -607,7 +607,7 @@ freq = frequency;
 nCh = 64;
 
 % Folder to save all figures
-save_root = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/klecks/cp10_till_100/lfp/only_hits/loc_difflev/all_dlev';
+save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation', animalName, 'cp10_till_100', 'lfp', 'only_hits', 'loc_difflev', 'all_dlev');
 if ~exist(save_root, 'dir')
     mkdir(save_root);
 end

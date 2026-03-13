@@ -14,10 +14,10 @@ addpath /mnt/hpc/projects/MWSampling/4Shivangi
 clc
 
 %% Paths and parameters
+animalName = 'klecks';  % Change this to switch animal 
 
-datafolder   = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks';
-output_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/coherence';
-animalName = 'klecks';
+datafolder    = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
+output_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'coherence');
 permut_n = 1000;
 alpha = 0.05;
 

@@ -2,6 +2,7 @@
 % Clean the eye data like lfp data and compute reaction time for each of
 % the sessions. The reaction time calculated here is the saccade initiation
 % time and done in Zhang2025
+
 clearvars
 close all
 clc
@@ -14,11 +15,12 @@ addpath /mnt/hpc/opt/ESIsoftware/matlab/esi-nbf
 clc
 
 %% Paths
-datafolder = '/mnt/hpc/projects/MWSampling/4Shivangi/data_Klecks';
-resultfolder   = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks';
+animalName = 'hermes';  % Change this to switch animal 
+
+datafolder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['data_' upper(animalName(1)) animalName(2:end)]);
+resultfolder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
 
 cd(resultfolder)
-animalName = 'klecks';
 temp = dir;
 
 session_names = {};
@@ -52,15 +54,15 @@ for isess = 1:length(session_names)
     cd(data_path{isess})
     
     % check if file exists
-    if ~isfile('lfpTrials_cleanf.mat')
-        fprintf('Skipping %s: lfpTrials_cleanf.mat not found\n', session_names{isess});
+    if ~isfile('lfpTrials_clean.mat')
+        fprintf('Skipping %s: lfpTrials_clean.mat not found\n', session_names{isess});
         continue
     end
     
-    ESIload('lfpTrials_cleanf.mat');
+    ESIload('lfpTrials_clean.mat');
     
-    trials = 1:length(lfpTrials_cleanf.trial);
-    A = cellfun(@(x) isnan(x),lfpTrials_cleanf.trial,'UniformOutput',false);
+    trials = 1:length(lfpTrials_clean.trial);
+    A = cellfun(@(x) isnan(x),lfpTrials_clean.trial,'UniformOutput',false);
     remove_channels = cellfun(@(x) find(x(:,1)==1),A,'UniformOutput',false);
     B = cellfun(@(x) size(x,1),remove_channels,'UniformOutput',false);
     remove_trials = find(cell2mat(B)==64);
@@ -71,7 +73,7 @@ for isess = 1:length(session_names)
     eyeData  = ft_selectdata(cfg,eyeTrials);
 
     eye_file = fullfile(session_paths_RT{isess}, 'eyeData.mat');
-    save(eye_file, 'eyeData'); %cleaned eye data
+    save(eye_file, 'eyeData');
 
 %% Compute RTs
 

@@ -35,11 +35,11 @@ concatenate_erp_amp = 1;
 concatenate_RT     = 0;
 
 %% Create data paths
+animalName = 'hermes';  % Change this to switch animal (e.g. 'klecks')
 
-datafolder   = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes';
+datafolder   = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
 
 cd(datafolder),
-animalName = 'hermes';
 temp = dir;
 session_names = [];
 ii = 0;
@@ -55,7 +55,7 @@ session_paths_files = cellfun(@(x) fullfile(datafolder,x, 'clean_data.mat'), ses
 
 phase_paths = cellfun(@(x) fullfile(datafolder, x,'Phase_analysis/hit_miss'),session_names, 'uniform',0);
 RT_paths = cellfun(@(x) fullfile(datafolder, x,'RT'),session_names, 'uniform',0);
-phase_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/phase_coherence/cp_plus_100';
+phase_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_coherence', 'cp_plus_100');
 % cp_till/plus_100 shows the erp range used, ph55_till_100 means that
 % phase est was done at 55 and the 10 or 25 after cp shows how many ms after
 % the defelction point the signal was cut
@@ -85,7 +85,7 @@ save channels_sessions channels_sessions
 
 %% load critical time per channel matrix
 
-cd('/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/critical_time')
+cd(fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'critical_time'))
 load('CriticalTime.mat')
 load('all_channels.mat')
 

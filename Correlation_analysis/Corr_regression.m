@@ -1,3 +1,9 @@
+% Corr_regression.m
+% Circular-linear correlation between phase and ERP amplitude residuals
+% (after regressing out difficulty level) across all channels.
+% Includes permutation testing (SLURM) and plotting of per-channel and
+% combined results.
+
 clear all
 close all
 clc
@@ -15,11 +21,11 @@ addpath /mnt/hpc/projects/MWSampling/4Shivangi/software_folder/CircStat2012a
 clc
 
 %% Create data paths
+animalName = 'hermes';  % Change this to switch animal (e.g. 'klecks')
 
-datafolder   = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes';
+datafolder   = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
 
 cd(datafolder)
-animalName = 'hermes';
 temp = dir;
 session_names = [];
 ii = 0;
@@ -32,7 +38,7 @@ end
 
 session_paths_files = cellfun(@(x) fullfile(datafolder,x,'clean_data.mat'), session_names, 'uniform',0);
 phase_paths = cellfun(@(x) fullfile(datafolder,x,'Phase_analysis/hit_miss'), session_names, 'uniform',0);
-output_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/phase_coherence/cp_plus_100';
+output_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_coherence', 'cp_plus_100');
 
 %% Correlation for all locations and difficulty levels %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

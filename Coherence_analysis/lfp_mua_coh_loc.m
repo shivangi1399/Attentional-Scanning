@@ -14,10 +14,10 @@ addpath /mnt/hpc/projects/MWSampling/4Shivangi
 clc
 
 %% Paths and parameters
+animalName    = 'hermes';  % Change this to switch animal (e.g. 'klecks')
 
-datafolder    = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes';
-output_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/coherence/per_location';
-animalName    = 'hermes';
+datafolder    = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
+output_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'coherence', 'per_location');
 
 % Get session names
 temp = dir(datafolder);
@@ -130,7 +130,7 @@ save all_coh_locationwise all_coh -v7.3
 
 %% Average across sessions per location and channel
 
-save_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/coherence/hermes/per_location/';
+save_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/coherence', animalName, 'per_location');
 if ~isfolder(save_folder)
     mkdir(save_folder);
 end

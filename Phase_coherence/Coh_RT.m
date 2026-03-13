@@ -15,9 +15,10 @@ addpath /mnt/hpc/projects/MWSampling/4Shivangi
 clc
 
 %% Settings
+animalName = 'hermes';  % Change this to switch animal (e.g. 'klecks')
 
-data_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/cp10_till_100';
-coh_folder  = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/phase_coherence/cp10_till_100';
+data_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'multi_lin_reg', 'cp10_till_100');
+coh_folder  = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_coherence', 'cp10_till_100');
 permut_n = 1000;
 nCh = 64;
 
@@ -88,7 +89,7 @@ slurmfun(@phase_coherence_RT_perm, cfg, ...
 %  PLOTTING — Phase coherence with RT
 %  =====================================================================
 
-save_root_RT = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_coherence/klecks/cp10_till_100/RT/all_loc_difflev';
+save_root_RT = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_coherence', animalName, 'cp10_till_100', 'RT', 'all_loc_difflev');
 if ~exist(save_root_RT, 'dir'), mkdir(save_root_RT); end
 
 cd(coh_folder)

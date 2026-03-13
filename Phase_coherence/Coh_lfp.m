@@ -14,11 +14,10 @@ addpath /mnt/hpc/projects/MWSampling/4Shivangi
 clc
 
 %% Create data paths
-
-datafolder   = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes';
+animalName = 'hermes';  
+datafolder   = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
 
 cd(datafolder),
-animalName = 'hermes';
 temp = dir;
 session_names = [];
 ii = 0;
@@ -30,16 +29,15 @@ for i = 1:length(temp)
 end
 
 session_paths_files = [];
-session_paths_files = cellfun(@(x) fullfile(datafolder,x, 'clean_mua.mat'), session_names, 'uniform',0);
+session_paths_files = cellfun(@(x) fullfile(datafolder,x, 'clean_lfp.mat'), session_names, 'uniform',0);
 
 phase_paths = cellfun(@(x) fullfile(datafolder, x,'Phase_analysis/hit_miss'),session_names, 'uniform',0);
-data_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/multi_lin_reg/cp10_till_100';
-output_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/phase_coherence/cp10_till_100';
+output_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_coherence', 'cp10_till_100');
 permut_n = 1000;
 
 %% coherence all locations and difficulty levels %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-cd(data_folder)
+cd(output_folder)
 load('ph_all_sess.mat')
 
 % Real data
@@ -47,11 +45,11 @@ nCh = 64;
 for ichan = 1:nCh
     ichan
     phase = ph_comb.phase_all(:,:,ichan);
-    erp_amp = ph_comb.MUA_ERP_ampl_all(:,ichan);
+    erp_amp = ph_comb.LFP_ERP_ampl_all(:,ichan);
 
     [coh, phase_spec] = phase_coherence(phase, erp_amp);
 
-    chan_folder = fullfile(output_folder,'mua','all_loc_difflev', num2str(ichan));
+    chan_folder = fullfile(output_folder,'lfp','all_loc_difflev', num2str(ichan));
     if ~exist(chan_folder,'dir'), mkdir(chan_folder); end
     save(fullfile(chan_folder,'coherence.mat'),'coh','phase_spec');
 end
@@ -65,22 +63,22 @@ cfg = cell(1,nCh);
 for ichan = 1:nCh
     cfg{ichan}.ichan        = ichan;
     cfg{ichan}.permut_n     = permut_n;
-    cfg{ichan}.infile       = fullfile(data_folder);
-    cfg{ichan}.outfile      = fullfile(output_folder, 'mua',...
+    cfg{ichan}.infile       = fullfile(output_folder);
+    cfg{ichan}.outfile      = fullfile(output_folder, 'lfp',...
         'all_loc_difflev');
     cfg{ichan}.perm_indices = perm_indices;
     cfg{ichan}.trial_idx    = trial_idx;
 end
 
 % Launch jobs
-slurmfun(@phase_coherence_perm_mua, cfg, ...
+slurmfun(@phase_coherence_perm_lfp, cfg, ...
     'partition',   '8GB', ...
     'stopOnError', false, ...
     'useUserPath', true);
 
 %% coherence particular locations and difficulty levels - keep all Dlev %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-cd(data_folder)
+cd(output_folder)
 load('ph_all_sess.mat')
 
 % Find unique locations and difficulty levels
@@ -113,14 +111,14 @@ for iloc = 1:length(targ_loc)
                      ph_comb.trialinfo(:,18) <= max_th);
     
     phase_data = ph_comb.phase_all(trial_idx,:,:);  % trials x freq x channels
-    erp_amp    = ph_comb.MUA_ERP_ampl_all(trial_idx,:); % trials x channels
+    erp_amp    = ph_comb.LFP_ERP_ampl_all(trial_idx,:); % trials x channels
     
     for ichan = 1:64
         phase = squeeze(phase_data(:,:,ichan));  % trials x freq
         erp   = erp_amp(:,ichan);
         [coh, phase_spec] = phase_coherence(phase, erp);
         
-        chan_folder = fullfile(output_folder, 'mua',...
+        chan_folder = fullfile(output_folder, 'lfp',...
             'loc_difflev_all', ...
             sprintf('loc%d', loc), ...
             sprintf('%d_%d', min_th, max_th), ...
@@ -139,8 +137,8 @@ for iloc = 1:length(targ_loc)
     for ichan = 1:64
         cfg{ichan}.ichan        = ichan;
         cfg{ichan}.permut_n     = permut_n;
-        cfg{ichan}.infile       = fullfile(data_folder);
-        cfg{ichan}.outfile      = fullfile(output_folder, 'mua',...
+        cfg{ichan}.infile       = fullfile(output_folder);
+        cfg{ichan}.outfile      = fullfile(output_folder, 'lfp',...
             'loc_difflev_all', ...
             sprintf('loc%d', loc), ...
             sprintf('%d_%d', min_th, max_th));
@@ -149,7 +147,7 @@ for iloc = 1:length(targ_loc)
     end
     
     % Launch jobs
-    slurmfun(@phase_coherence_perm_mua, cfg, ...
+    slurmfun(@phase_coherence_perm_lfp, cfg, ...
         'partition',   '8GB', ...
         'stopOnError', false, ...
         'useUserPath', true);
@@ -158,7 +156,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Plotting all locations and difficulty levels
 
-save_root = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_coherence/hermes/cp10_till_100/mua/all_loc_difflev';
+save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/coherence', animalName, 'cp10_till_100', 'lfp', 'all_loc_difflev');
 if ~exist(save_root,'dir'), mkdir(save_root); end
 
 cd(output_folder)
@@ -172,7 +170,7 @@ Coh_chan   = false(nCh, numel(freq));
 Phase_chan = false(nCh, numel(freq));
 
 for ch = 1:nCh
-    ch_folder = fullfile(output_folder,'mua','all_loc_difflev', num2str(ch));
+    ch_folder = fullfile(output_folder,'lfp','all_loc_difflev', num2str(ch));
     if ~exist(ch_folder, 'dir')
         warning(['Skipping channel ' num2str(ch) ' (folder missing)']);
         continue
@@ -259,7 +257,7 @@ coh_perm_all = [];
 phase_perm_all = [];
 
 for ch = find(valid_idx)
-    cd(fullfile(output_folder,'mua','all_loc_difflev', num2str(ch)));
+    cd(fullfile(output_folder,'lfp','all_loc_difflev', num2str(ch)));
     load coherence
     load coh_perm
     load phase_spec_perm
@@ -299,8 +297,8 @@ end
 
 %% Plotting combinations of difficulty level and locations %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-output_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/phase_coherence/cp10_till_100';
-save_root = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/coherence/hermes/cp10_till_100/mua/loc_difflev_all';
+output_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_coherence', 'cp10_till_100');
+save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/coherence', animalName, 'cp10_till_100', 'lfp', 'loc_difflev_all');
 if ~exist(save_root,'dir'), mkdir(save_root); end
 
 cd(output_folder)
@@ -309,7 +307,6 @@ freq = frequency;
 nCh = 64;
 
 % Load target locations and difficulty levels 
-cd(data_folder)
 load('ph_all_sess.mat')
 targ_loc = unique(ph_comb.trialinfo(:,16));
 diff_levels = unique(ph_comb.trialinfo(:,18));
@@ -342,7 +339,7 @@ for iloc = 1:length(targ_loc)
     f1 = figure(1); clf;
     f2 = figure(2); clf;
     for ch = 1:nCh
-        ch_folder = fullfile(output_folder,'mua','loc_difflev_all',...
+        ch_folder = fullfile(output_folder,'lfp','loc_difflev_all',...
             sprintf('loc%d',loc), sprintf('%d_%d',min_th,max_th), num2str(ch));
         if ~exist(ch_folder,'dir'), continue; end
         cd(ch_folder);
@@ -415,7 +412,7 @@ for iloc = 1:length(targ_loc)
     coh_all = []; phase_all = [];
     coh_perm_all = []; phase_perm_all = [];
     for ch = find(valid_idx)
-        ch_folder = fullfile(output_folder,'mua','loc_difflev_all',...
+        ch_folder = fullfile(output_folder,'lfp','loc_difflev_all',...
             sprintf('loc%d',loc), sprintf('%d_%d',min_th,max_th), num2str(ch));
         cd(ch_folder);
         load coherence.mat coh phase_spec
