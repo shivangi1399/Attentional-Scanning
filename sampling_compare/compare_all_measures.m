@@ -1,4 +1,4 @@
-%% Compile and compare all phase-dependent analyses in one figure:
+%% Compile and compare all phase-dependent analyses in one figure: compare correlation, coherence and regression
 
 clear all; close all; clc
 
@@ -393,4 +393,151 @@ for row = 1:4
 end
 
 print(f2, fullfile(save_root, 'significance_heatmaps.pdf'), '-dpdf');
+
+%% MONKEY-AVERAGE COMPARISON
+
+fprintf('Loading monkey-average results...\n');
+
+results_combined = '/mnt/hpc/projects/MWSampling/4Shivangi/results_combined';
+
+coh_combined  = fullfile(results_combined, 'phase_coherence',  'cp10_till_100');
+corr_combined = fullfile(results_combined, 'phase_correlation', 'cp10_till_100');
+reg_combined  = fullfile(results_combined, 'multi_lin_reg',     'cp10_till_100');
+
+monkey_save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/sampling_compare/monkey_avg');
+if ~exist(monkey_save_root, 'dir'), mkdir(monkey_save_root); end
+
+% --- Coherence monkey-average ---
+mk_coh_vals = cell(1,4);
+mk_coh_thrs = NaN(1,4);
+
+coh_monkey_files = {
+    fullfile(coh_combined, 'mua', 'all_loc_difflev', 'monkey_avg_results.mat');
+    fullfile(coh_combined, 'lfp', 'all_loc_difflev', 'monkey_avg_results.mat');
+    fullfile(coh_combined, 'RT',  'all_loc_difflev', 'monkey_avg_results.mat');
+    fullfile(corr_combined, 'hit_miss_itc', 'all_loc_difflev', 'monkey_avg_results_itc.mat');
+};
+
+for row = 1:4
+    if isfile(coh_monkey_files{row})
+        tmp = load(coh_monkey_files{row});
+        if row == 4  % ITC uses different variable names
+            mk_coh_vals{row} = tmp.itc_monkey_avg;
+            mk_coh_thrs(row) = tmp.thresh_monkey_avg_itc;
+        else
+            mk_coh_vals{row} = tmp.coh_monkey_avg;
+            mk_coh_thrs(row) = tmp.thresh_monkey_avg;
+        end
+        if ~exist('freq_monkey', 'var'), freq_monkey = tmp.freq; end
+    else
+        warning('Monkey-avg coherence file not found: %s', coh_monkey_files{row});
+    end
+end
+
+% --- Correlation monkey-average ---
+mk_corr_vals = cell(1,4);
+mk_corr_thrs = NaN(1,4);
+
+corr_monkey_files = {
+    fullfile(corr_combined, 'mua', 'all_loc_difflev', 'monkey_avg_results.mat');
+    fullfile(corr_combined, 'lfp', 'all_loc_difflev', 'monkey_avg_results.mat');
+    fullfile(corr_combined, 'RT',  'all_loc_difflev', 'monkey_avg_results.mat');
+    fullfile(corr_combined, 'hit_miss', 'all_loc_difflev', 'monkey_avg_results_pos.mat');
+};
+
+for row = 1:4
+    if isfile(corr_monkey_files{row})
+        tmp = load(corr_monkey_files{row});
+        if row == 4  % POS uses different variable names
+            mk_corr_vals{row} = tmp.pos_monkey_avg;
+            mk_corr_thrs(row) = tmp.thresh_monkey_avg_pos;
+        else
+            mk_corr_vals{row} = tmp.corr_monkey_avg;
+            mk_corr_thrs(row) = tmp.thresh_monkey_avg;
+        end
+    else
+        warning('Monkey-avg correlation file not found: %s', corr_monkey_files{row});
+    end
+end
+
+% --- Regression monkey-average ---
+mk_reg_vals = cell(1,4);
+mk_reg_thrs = NaN(1,4);
+
+reg_monkey_dvs = {'MUA_ERP_ampl_all', 'LFP_ERP_ampl_all', 'RT', 'hit_miss'};
+
+for row = 1:4
+    reg_monkey_file = fullfile(reg_combined, reg_monkey_dvs{row}, 'monkey_avg_results.mat');
+    if isfile(reg_monkey_file)
+        tmp = load(reg_monkey_file);
+        mk_reg_vals{row} = tmp.monkey_avg_obs.phase;
+        mk_reg_thrs(row) = tmp.thresh_monkey.phase;
+    else
+        warning('Monkey-avg regression file not found: %s', reg_monkey_file);
+    end
+end
+
+%% FIGURE 3: MONKEY-AVERAGE — curves with significance shading
+
+mk_coh_ylabels  = {'Coherence', 'Coherence', 'Coherence', 'ITC'};
+mk_corr_ylabels = {'Correlation', 'Correlation', 'Correlation', 'POS'};
+
+f3 = figure('Name', 'Phase Analysis - Monkey Average', ...
+    'Units', 'centimeters', 'Position', [1 1 48 38]);
+set(f3, 'PaperUnits', 'centimeters', 'PaperSize', [48 38], 'PaperPosition', [0 0 48 38]);
+
+for row = 1:nRows
+
+    lc = line_colors(row,:);
+    sc = shade_colors(row,:);
+    tc = thr_colors(row,:);
+
+    % --- Column 1: Coherence ---
+    subplot(nRows, nCols, (row-1)*nCols + 1); hold on;
+    if ~isempty(mk_coh_vals{row})
+        plot_pretty(freq_monkey, mk_coh_vals{row}, mk_coh_thrs(row), lc, sc, tc, mk_coh_ylabels{row});
+        title(row_labels{row}, 'FontSize', 9);
+    else
+        title([row_labels{row} ' (no data)'], 'FontSize', 9);
+        xlabel('Frequency (Hz)'); ylabel(mk_coh_ylabels{row});
+    end
+    if row == 1
+        text(0.5, 1.22, col_labels{1}, 'Units', 'normalized', ...
+            'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
+    end
+
+    % --- Column 2: Correlation ---
+    subplot(nRows, nCols, (row-1)*nCols + 2); hold on;
+    if ~isempty(mk_corr_vals{row})
+        plot_pretty(freq_monkey, mk_corr_vals{row}, mk_corr_thrs(row), lc, sc, tc, mk_corr_ylabels{row});
+        title(row_labels{row}, 'FontSize', 9);
+    else
+        title([row_labels{row} ' (no data)'], 'FontSize', 9);
+        xlabel('Frequency (Hz)'); ylabel(mk_corr_ylabels{row});
+    end
+    if row == 1
+        text(0.5, 1.22, col_labels{2}, 'Units', 'normalized', ...
+            'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
+    end
+
+    % --- Column 3: Regression R² ---
+    subplot(nRows, nCols, (row-1)*nCols + 3); hold on;
+    if ~isempty(mk_reg_vals{row})
+        plot_pretty(freqs_reg, mk_reg_vals{row}, mk_reg_thrs(row), lc, sc, tc, 'R^2');
+        title(row_labels{row}, 'FontSize', 9);
+    else
+        title([row_labels{row} ' (no data)'], 'FontSize', 9);
+        xlabel('Frequency (Hz)'); ylabel('R^2');
+    end
+    set(gca, 'FontSize', 8, 'Box', 'on');
+    if row == 1
+        text(0.5, 1.22, col_labels{3}, 'Units', 'normalized', ...
+            'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
+    end
+end
+
+sgtitle('Monkey-Average: All Phase-Dependent Measures', ...
+    'FontSize', 16, 'FontWeight', 'bold');
+
+print(f3, fullfile(monkey_save_root, 'monkey_avg_comparison_all_measures.pdf'), '-dpdf');
 

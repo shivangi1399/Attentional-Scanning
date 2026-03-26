@@ -497,3 +497,114 @@ end
 
 sgtitle('Proportion of Significant Channels per Frequency (FWER corrected)',...
         'FontSize', 16, 'FontWeight', 'bold');
+
+%% FIGURE 9: MONKEY-AVERAGE R² WITH THRESHOLD
+
+animals = {'hermes', 'klecks'};
+nAnimals = numel(animals);
+animal_colors = lines(nAnimals);
+
+figure('Name','Monkey-Average R²','Position',[50 50 1800 1000]);
+
+for d = 1:nDV
+
+    depVarName = Y_vars{d};
+    monkey_file = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/multi_lin_reg/cp10_till_100', ...
+        depVarName, 'monkey_avg_results.mat');
+
+    if ~isfile(monkey_file)
+        for pm = 1:nPred
+            subplot(nDV, nPred, (d-1)*nPred + pm);
+            title([Y_labels{d} ': ' pred_labels{pm} ' (no data)']);
+        end
+        continue
+    end
+
+    mk = load(monkey_file);
+
+    for pm = 1:nPred
+        subplot(nDV, nPred, (d-1)*nPred + pm);
+        hold on;
+
+        af = avg_fields{pm};
+        avg_R2  = mk.monkey_avg_obs.(af);
+        avg_thr = mk.thresh_monkey.(af);
+
+        % Find significant frequencies
+        sig_idx = avg_R2 > avg_thr;
+
+        % Plot R² curve
+        plot(freqs, avg_R2, 'Color', colors_pred(pm,:), 'LineWidth', 2.5);
+
+        % Threshold line
+        yline(avg_thr, 'k--', 'LineWidth', 2);
+
+        % Shade significant regions
+        if any(sig_idx)
+            y_fill_bot = zeros(1, length(freqs));
+            y_fill_top = avg_R2;
+            y_fill_top(~sig_idx) = 0;
+            fill([freqs fliplr(freqs)], [y_fill_top fliplr(y_fill_bot)], ...
+                colors_pred(pm,:), 'FaceAlpha', 0.3, 'EdgeColor', 'none');
+        end
+
+        xlabel('Frequency (Hz)'); ylabel('R² (monkey avg)');
+        title([Y_labels{d} ': ' pred_labels{pm}]);
+        grid on;
+    end
+
+end
+
+sgtitle('Monkey-Average R² with FWER Threshold (shaded = significant)',...
+        'FontSize', 16, 'FontWeight', 'bold');
+
+%% FIGURE 10: PER-ANIMAL + MONKEY-AVERAGE OVERLAY
+
+figure('Name','Per-Animal + Monkey-Average R²','Position',[50 50 1800 1000]);
+
+for d = 1:nDV
+
+    depVarName = Y_vars{d};
+    monkey_file = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/multi_lin_reg/cp10_till_100', ...
+        depVarName, 'monkey_avg_results.mat');
+
+    if ~isfile(monkey_file)
+        for pm = 1:nPred
+            subplot(nDV, nPred, (d-1)*nPred + pm);
+            title([Y_labels{d} ': ' pred_labels{pm} ' (no data)']);
+        end
+        continue
+    end
+
+    mk = load(monkey_file);
+
+    for pm = 1:nPred
+        subplot(nDV, nPred, (d-1)*nPred + pm);
+        hold on;
+
+        af = avg_fields{pm};
+
+        % Per-animal curves
+        for a = 1:nAnimals
+            plot(freqs, mk.obs_monkey.(af)(a,:), 'Color', animal_colors(a,:), 'LineWidth', 1.5);
+        end
+
+        % Monkey average
+        plot(freqs, mk.monkey_avg_obs.(af), 'k', 'LineWidth', 2.5);
+
+        % Threshold
+        yline(mk.thresh_monkey.(af), '--r', 'LineWidth', 1.5);
+
+        xlabel('Frequency (Hz)'); ylabel('R²');
+        title([Y_labels{d} ': ' pred_labels{pm}]);
+        grid on;
+
+        if d == 1 && pm == 1
+            legend([animals, {'Monkey avg', 'Threshold'}], 'Location', 'best', 'FontSize', 7);
+        end
+    end
+
+end
+
+sgtitle('Per-Animal + Monkey-Average R² with Threshold',...
+        'FontSize', 16, 'FontWeight', 'bold');

@@ -1,3 +1,4 @@
+% Coherence between pre stimulus phase and reaction time
 clear all
 close all
 clc

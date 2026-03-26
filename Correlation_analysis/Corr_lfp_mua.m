@@ -1,3 +1,4 @@
+% Correlation between pre stimulus phase and post stimulus lfp amplitude or mua amplitude
 clear all
 close all
 clc

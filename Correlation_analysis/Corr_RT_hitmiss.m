@@ -1,3 +1,4 @@
+% Correlation between pre stimulus phase and reaction time or performance measures
 clear all
 close all
 clc
