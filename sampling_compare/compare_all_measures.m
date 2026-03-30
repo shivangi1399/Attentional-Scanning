@@ -1,6 +1,9 @@
-%% Compile and compare all phase-dependent analyses in one figure: compare correlation, coherence and regression
+% Compile and compare all phase-dependent analyses in one figure: compare correlation, 
+% coherence and regression
 
-clear all; close all; clc
+clear all; 
+close all; 
+clc
 
 %% SETTINGS
 
@@ -535,9 +538,6 @@ for row = 1:nRows
             'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
     end
 end
-
-sgtitle('Monkey-Average: All Phase-Dependent Measures', ...
-    'FontSize', 16, 'FontWeight', 'bold');
 
 print(f3, fullfile(monkey_save_root, 'monkey_avg_comparison_all_measures.pdf'), '-dpdf');
 
