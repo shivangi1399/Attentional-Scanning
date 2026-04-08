@@ -21,22 +21,19 @@ if isempty(rt)
 end
 
 nFreq = size(phase, 2);
-coh_perm        = nan(permut_n, nFreq);
-phase_spec_perm = nan(permut_n, nFreq);
+coh_perm_complex = nan(permut_n, nFreq);  % complex: magnitude + phase preserved
 
 for perm = 1:permut_n
     % Shuffle RT using shared permutation, then remove NaN entries
     rt_perm = rt(perm_indices{perm});
-    
+
     valid_perm = ~isnan(rt_perm); % Shuffled NaNs may land in valid positions — remove them
     rt_clean   = rt_perm(valid_perm);
     ph_clean   = phase(valid_perm, :);
 
     for foi = 1:nFreq
         vec = exp(1i * ph_clean(:, foi)) .* rt_clean(:);
-        cavg = mean(vec);
-        coh_perm(perm, foi)        = abs(cavg);
-        phase_spec_perm(perm, foi) = angle(cavg);
+        coh_perm_complex(perm, foi) = mean(vec);
     end
 end
 
@@ -46,7 +43,6 @@ if ~exist(num2str(ichan), 'dir')
 end
 cd(num2str(ichan))
 
-ESIsave coh_perm coh_perm
-ESIsave phase_spec_perm phase_spec_perm
+ESIsave coh_perm_complex coh_perm_complex
 ESIsave perm_indices perm_indices
 end

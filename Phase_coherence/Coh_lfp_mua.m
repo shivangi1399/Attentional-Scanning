@@ -71,11 +71,11 @@ for a = 1:numel(animals)
             phase = ph_comb.phase_all(:,:,ichan);
             erp_amp = ph_comb.(amp_field)(:,ichan);
 
-            [coh, phase_spec] = phase_coherence(phase, erp_amp);
+            [coh, phase_spec, coh_complex] = phase_coherence(phase, erp_amp);
 
             chan_folder = fullfile(output_folder, sig, 'all_loc_difflev', num2str(ichan));
             if ~exist(chan_folder,'dir'), mkdir(chan_folder); end
-            save(fullfile(chan_folder,'coherence.mat'),'coh','phase_spec');
+            save(fullfile(chan_folder,'coherence.mat'),'coh','phase_spec','coh_complex');
         end
 
         % Permutation test
@@ -108,34 +108,41 @@ for a = 1:numel(animals)
         freq = frequency;
         nFreq = numel(freq);
 
-        coh_all_ch = NaN(nCh, nFreq);
-        coh_perm_all_ch = [];
+        coh_complex_all_ch = NaN(nCh, nFreq);   % complex coherence per channel
+        coh_perm_complex_all_ch = [];            % complex perm null per channel [permut_n x nFreq x nCh]
 
         for ch = 1:nCh
             ch_folder = fullfile(output_folder, sig, 'all_loc_difflev', num2str(ch));
             if ~exist(ch_folder, 'dir'), continue; end
 
-            coh_file = fullfile(ch_folder, 'coherence.mat');
-            perm_file = fullfile(ch_folder, 'coh_perm.mat');
+            coh_file  = fullfile(ch_folder, 'coherence.mat');
+            perm_file = fullfile(ch_folder, 'coh_perm_complex.mat');
             if ~isfile(coh_file) || ~isfile(perm_file), continue; end
 
-            load(coh_file, 'coh');
-            load(perm_file, 'coh_perm');
+            load(coh_file,  'coh_complex');
+            load(perm_file, 'coh_perm_complex');
 
-            if any(isnan(coh)) || any(isnan(coh_perm(:))), continue; end
+            if any(isnan(coh_complex)) || any(isnan(coh_perm_complex(:))), continue; end
 
-            coh_all_ch(ch,:) = coh;
-            coh_perm_all_ch = cat(3, coh_perm_all_ch, coh_perm);
+            coh_complex_all_ch(ch,:)    = coh_complex;
+            coh_perm_complex_all_ch     = cat(3, coh_perm_complex_all_ch, coh_perm_complex);
         end
 
-        coh_chan_avg = mean(coh_all_ch, 1, 'omitnan');
+        % Average in complex space, decompose only at the end
+        coh_complex_chan_avg = mean(coh_complex_all_ch, 1, 'omitnan');
+        coh_chan_avg  = abs(coh_complex_chan_avg);
+        phase_chan_avg = angle(coh_complex_chan_avg);
 
-        coh_perm_chan_avg = mean(coh_perm_all_ch, 3);
-        tmax_chan_avg = max(coh_perm_chan_avg, [], 2);
+        % Null distribution: average complex perms across channels, then take magnitude
+        coh_perm_chan_avg_complex = mean(coh_perm_complex_all_ch, 3);   % [permut_n x nFreq]
+        coh_perm_chan_avg = abs(coh_perm_chan_avg_complex);
+        tmax_chan_avg  = max(coh_perm_chan_avg, [], 2);
         thresh_chan_avg = quantile(tmax_chan_avg, 0.95);
 
         save_file = fullfile(output_folder, sig, 'all_loc_difflev', 'channel_avg_results.mat');
-        save(save_file, 'coh_chan_avg', 'coh_perm_chan_avg', 'tmax_chan_avg', 'thresh_chan_avg', 'coh_all_ch', 'freq');
+        save(save_file, 'coh_chan_avg', 'coh_complex_chan_avg', 'phase_chan_avg', ...
+            'coh_perm_chan_avg_complex', 'coh_perm_chan_avg', ...
+            'tmax_chan_avg', 'thresh_chan_avg', 'coh_complex_all_ch', 'freq');
         fprintf('Saved %s channel-average results for %s\n', upper(sig), animalName);
 
     end  % signal type loop
@@ -149,8 +156,8 @@ nAnimals = numel(animals);
 for s = 1:numel(signal_types)
     sig = signal_types{s};
 
-    coh_monkey = [];
-    perm_monkey = [];
+    coh_complex_monkey = [];   % [nAnimals x nFreq] complex
+    perm_complex_monkey = [];  % [permut_n x nFreq x nAnimals] complex
 
     for a = 1:nAnimals
         animal_output = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
@@ -163,22 +170,31 @@ for s = 1:numel(signal_types)
         end
 
         tmp = load(avg_file);
-        coh_monkey = cat(1, coh_monkey, tmp.coh_chan_avg);
-        perm_monkey = cat(3, perm_monkey, tmp.coh_perm_chan_avg);
+        coh_complex_monkey  = cat(1, coh_complex_monkey,  tmp.coh_complex_chan_avg);
+        perm_complex_monkey = cat(3, perm_complex_monkey, tmp.coh_perm_chan_avg_complex);
     end
 
-    if size(coh_monkey, 1) == nAnimals
-        coh_monkey_avg = mean(coh_monkey, 1);
+    if size(coh_complex_monkey, 1) == nAnimals
+        % Average complex across animals, decompose only at the end
+        coh_complex_monkey_avg = mean(coh_complex_monkey, 1);
+        coh_monkey_avg  = abs(coh_complex_monkey_avg);
+        phase_monkey_avg = angle(coh_complex_monkey_avg);
 
-        perm_monkey_avg = mean(perm_monkey, 3);
-        tmax_monkey_avg = max(perm_monkey_avg, [], 2);
+        % Per-animal magnitudes (for overlay plot)
+        coh_monkey = abs(coh_complex_monkey);
+
+        % Null: average complex perms across animals, then magnitude
+        perm_monkey_avg_complex = mean(perm_complex_monkey, 3);   % [permut_n x nFreq]
+        perm_monkey_avg = abs(perm_monkey_avg_complex);
+        tmax_monkey_avg   = max(perm_monkey_avg, [], 2);
         thresh_monkey_avg = quantile(tmax_monkey_avg, 0.95);
 
         monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_coherence/cp10_till_100', sig, 'all_loc_difflev');
         if ~exist(monkey_save_dir, 'dir'), mkdir(monkey_save_dir); end
         save(fullfile(monkey_save_dir, 'monkey_avg_results.mat'), ...
-            'coh_monkey_avg', 'perm_monkey_avg', 'tmax_monkey_avg', ...
-            'thresh_monkey_avg', 'coh_monkey', 'animals', 'freq');
+            'coh_monkey_avg', 'coh_complex_monkey_avg', 'phase_monkey_avg', ...
+            'perm_monkey_avg', 'tmax_monkey_avg', ...
+            'thresh_monkey_avg', 'coh_monkey', 'coh_complex_monkey', 'animals', 'freq');
 
         fprintf('%s Monkey-average threshold: %.4f\n', upper(sig), thresh_monkey_avg);
 

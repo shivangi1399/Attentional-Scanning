@@ -19,8 +19,8 @@ load('ph_all_sess.mat')
 phase = ph_comb.phase_all(trial_idx, :, ichan);  % [nTrials x nFreq]
 
 nFreq = size(phase, 2);
-pos_perm = nan(permut_n, nFreq);
-itc_perm = nan(permut_n, nFreq);
+pos_perm         = nan(permut_n, nFreq);
+itc_perm_complex = complex(nan(permut_n, nFreq));
 
 for perm = 1:permut_n
     % Shuffle hit/miss labels
@@ -40,9 +40,10 @@ for perm = 1:permut_n
     phase_combined(miss_idx, :) = mod(phase(miss_idx, :) + pi, 2*pi) - pi;
 
     for foi = 1:nFreq
-        itc_perm(perm, foi) = abs(mean(exp(1i * phase_combined(:, foi))));
+        itc_perm_complex(perm, foi) = mean(exp(1i * phase_combined(:, foi)));
     end
 end
+itc_perm = abs(itc_perm_complex);
 
 cd(cfg_fun.outfile)
 if ~exist(num2str(ichan), 'dir')
@@ -51,6 +52,6 @@ end
 cd(num2str(ichan))
 
 ESIsave pos_perm pos_perm
-ESIsave itc_perm itc_perm
+ESIsave itc_perm itc_perm itc_perm_complex
 ESIsave perm_indices perm_indices
 end

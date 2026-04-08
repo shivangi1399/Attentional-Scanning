@@ -139,16 +139,18 @@ for a = 1:numel(animals)
         phase_inv = phase;
         phase_inv(miss_idx, :) = mod(phase(miss_idx, :) + pi, 2*pi) - pi;
 
+        itc_complex = nan(1, nFreq);
         for foi = 1:nFreq
-            itc(1, foi) = abs(mean(exp(1i * phase_inv(:, foi))));
+            itc_complex(1, foi) = mean(exp(1i * phase_inv(:, foi)));
         end
+        itc = abs(itc_complex);
 
         chan_folder = fullfile(output_HM, 'all_loc_difflev', num2str(ichan));
         if ~exist(chan_folder, 'dir'), mkdir(chan_folder); end
         cd(chan_folder)
 
         save pos pos
-        save itc itc
+        save itc itc itc_complex
     end
 
     %% B2. Permutation (SLURM)
@@ -494,34 +496,40 @@ for a = 1:numel(animals)
 
     fprintf('Computing ITC channel-average null for %s...\n', animalName);
 
-    itc_all_ch = NaN(nCh, nFreq);
-    itc_perm_all_ch = [];
+    itc_complex_all_ch      = complex(NaN(nCh, nFreq));
+    itc_perm_complex_all_ch = [];
 
     for ch = 1:nCh
         ch_folder = fullfile(output_HM, 'all_loc_difflev', num2str(ch));
         if ~exist(ch_folder, 'dir'), continue; end
 
-        itc_file = fullfile(ch_folder, 'itc.mat');
+        itc_file  = fullfile(ch_folder, 'itc.mat');
         perm_file = fullfile(ch_folder, 'itc_perm.mat');
         if ~isfile(itc_file) || ~isfile(perm_file), continue; end
 
-        load(itc_file, 'itc');
-        load(perm_file, 'itc_perm');
+        load(itc_file,  'itc_complex');
+        load(perm_file, 'itc_perm_complex');
 
-        if any(isnan(itc)) || any(isnan(itc_perm(:))), continue; end
+        if any(isnan(itc_complex)) || any(isnan(itc_perm_complex(:))), continue; end
 
-        itc_all_ch(ch,:) = itc;
-        itc_perm_all_ch = cat(3, itc_perm_all_ch, itc_perm);
+        itc_complex_all_ch(ch,:)      = itc_complex;
+        itc_perm_complex_all_ch       = cat(3, itc_perm_complex_all_ch, itc_perm_complex);
     end
 
-    itc_chan_avg = mean(itc_all_ch, 1, 'omitnan');
+    % Average in complex space, decompose only at the end (consistent with coherence)
+    itc_complex_chan_avg = mean(itc_complex_all_ch, 1, 'omitnan');
+    itc_chan_avg         = abs(itc_complex_chan_avg);
+    phase_chan_avg_itc   = angle(itc_complex_chan_avg);
 
-    itc_perm_chan_avg = mean(itc_perm_all_ch, 3);
-    tmax_chan_avg_itc = max(itc_perm_chan_avg, [], 2);
-    thresh_chan_avg_itc = quantile(tmax_chan_avg_itc, 0.95);
+    itc_perm_chan_avg_complex = mean(itc_perm_complex_all_ch, 3);
+    itc_perm_chan_avg         = abs(itc_perm_chan_avg_complex);
+    tmax_chan_avg_itc         = max(itc_perm_chan_avg, [], 2);
+    thresh_chan_avg_itc       = quantile(tmax_chan_avg_itc, 0.95);
 
     save_file = fullfile(output_HM, 'all_loc_difflev', 'channel_avg_results_itc.mat');
-    save(save_file, 'itc_chan_avg', 'itc_perm_chan_avg', 'tmax_chan_avg_itc', 'thresh_chan_avg_itc', 'itc_all_ch', 'freq');
+    save(save_file, 'itc_complex_chan_avg', 'itc_chan_avg', 'phase_chan_avg_itc', ...
+        'itc_perm_chan_avg_complex', 'itc_perm_chan_avg', ...
+        'tmax_chan_avg_itc', 'thresh_chan_avg_itc', 'itc_complex_all_ch', 'freq');
     fprintf('Saved ITC channel-average results for %s\n', animalName);
 
     close all
@@ -675,8 +683,8 @@ end
 
 %% Monkey-average — ITC (Inverted Miss Phases)
 
-itc_monkey = [];
-perm_monkey_itc = [];
+itc_complex_monkey = [];
+perm_complex_monkey_itc = [];
 
 for a = 1:nAnimals
     animal_corr = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
@@ -689,24 +697,29 @@ for a = 1:nAnimals
     end
 
     tmp = load(avg_file);
-    itc_monkey = cat(1, itc_monkey, tmp.itc_chan_avg);
-    perm_monkey_itc = cat(3, perm_monkey_itc, tmp.itc_perm_chan_avg);
+    itc_complex_monkey      = cat(1, itc_complex_monkey,      tmp.itc_complex_chan_avg);
+    perm_complex_monkey_itc = cat(3, perm_complex_monkey_itc, tmp.itc_perm_chan_avg_complex);
 end
 
-if size(itc_monkey, 1) == nAnimals
+if size(itc_complex_monkey, 1) == nAnimals
     freq = tmp.freq;
 
-    itc_monkey_avg = mean(itc_monkey, 1);
+    % Average in complex space, decompose only at the end
+    itc_complex_monkey_avg = mean(itc_complex_monkey, 1);
+    itc_monkey_avg         = abs(itc_complex_monkey_avg);
+    phase_monkey_avg_itc   = angle(itc_complex_monkey_avg);
+    itc_monkey             = abs(itc_complex_monkey);   % per-animal magnitudes for plotting
 
-    perm_monkey_avg_itc = mean(perm_monkey_itc, 3);
-    tmax_monkey_avg_itc = max(perm_monkey_avg_itc, [], 2);
+    perm_monkey_avg_itc   = abs(mean(perm_complex_monkey_itc, 3));
+    tmax_monkey_avg_itc   = max(perm_monkey_avg_itc, [], 2);
     thresh_monkey_avg_itc = quantile(tmax_monkey_avg_itc, 0.95);
 
     monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_correlation/cp10_till_100', 'hit_miss_itc', 'all_loc_difflev');
     if ~exist(monkey_save_dir, 'dir'), mkdir(monkey_save_dir); end
     save(fullfile(monkey_save_dir, 'monkey_avg_results_itc.mat'), ...
-        'itc_monkey_avg', 'perm_monkey_avg_itc', 'tmax_monkey_avg_itc', ...
-        'thresh_monkey_avg_itc', 'itc_monkey', 'animals', 'freq');
+        'itc_complex_monkey_avg', 'itc_monkey_avg', 'phase_monkey_avg_itc', ...
+        'perm_monkey_avg_itc', 'tmax_monkey_avg_itc', ...
+        'thresh_monkey_avg_itc', 'itc_monkey', 'itc_complex_monkey', 'animals', 'freq');
 
     fprintf('ITC Monkey-average threshold: %.4f\n', thresh_monkey_avg_itc);
 

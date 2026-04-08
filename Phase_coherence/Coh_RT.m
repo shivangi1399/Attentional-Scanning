@@ -58,11 +58,11 @@ for a = 1:numel(animals)
             continue
         end
 
-        [coh, phase_spec] = phase_coherence(phase_clean, rt_clean);
+        [coh, phase_spec, coh_complex] = phase_coherence(phase_clean, rt_clean);
 
         chan_folder = fullfile(output_coh_RT, 'all_loc_difflev', num2str(ichan));
         if ~exist(chan_folder, 'dir'), mkdir(chan_folder); end
-        save(fullfile(chan_folder, 'coherence.mat'), 'coh', 'phase_spec');
+        save(fullfile(chan_folder, 'coherence.mat'), 'coh', 'phase_spec', 'coh_complex');
     end
 
     %% Permutation (SLURM)
@@ -103,9 +103,7 @@ for a = 1:numel(animals)
     nFreq = numel(freq);
 
     limit_maxc = nan(1, nCh);
-    limit_maxp = nan(1, nCh);
-    Coh_chan    = false(nCh, nFreq);
-    Phase_chan  = false(nCh, nFreq);
+    Coh_chan   = false(nCh, nFreq);
 
     f1 = figure(1);
     set(f1, 'Units', 'centimeters', 'Position', [1 1 50 40]);
@@ -119,27 +117,24 @@ for a = 1:numel(animals)
         if ~exist(ch_folder, 'dir'), continue; end
         cd(ch_folder);
 
-        if ~exist('coherence.mat','file') || ~exist('coh_perm.mat','file') || ...
-           ~exist('phase_spec_perm.mat','file')
+        if ~exist('coherence.mat','file') || ~exist('coh_perm_complex.mat','file')
             continue
         end
 
         load coherence
-        load coh_perm
-        load phase_spec_perm
+        load coh_perm_complex
 
-        if any(isnan(coh)) || any(isnan(coh_perm(:))) || ...
-           any(isnan(phase_spec)) || any(isnan(phase_spec_perm(:)))
+        coh     = abs(coh_complex);
+        coh_perm = abs(coh_perm_complex);
+
+        if any(isnan(coh)) || any(isnan(coh_perm(:))) || any(isnan(phase_spec))
             continue
         end
 
         tmaxc = max(coh_perm, [], 2);
         limit_maxc(ch) = quantile(tmaxc, 0.95);
 
-        tmaxp = max(phase_spec_perm, [], 2);
-        limit_maxp(ch) = quantile(tmaxp, 0.95);
-
-        if isnan(limit_maxc(ch)) || isnan(limit_maxp(ch)), continue; end
+        if isnan(limit_maxc(ch)), continue; end
 
         figure(f1);
         subplot(8, 8, ch);
@@ -148,11 +143,10 @@ for a = 1:numel(animals)
 
         figure(f2);
         subplot(8, 8, ch);
-        plot_sig(freq, phase_spec, limit_maxp(ch), 'Frequency', 'Phase spec');
+        plot_sig(freq, phase_spec, [], 'Frequency', 'Phase spec');
         title(['Ch ' num2str(ch)])
 
-        Coh_chan(ch,:)   = coh >= limit_maxc(ch);
-        Phase_chan(ch,:) = phase_spec >= limit_maxp(ch);
+        Coh_chan(ch,:) = coh >= limit_maxc(ch);
     end
 
     print(f1, fullfile(save_root_RT, 'all_channels_RT_coherence.pdf'), '-dpdf');
@@ -167,84 +161,69 @@ for a = 1:numel(animals)
     caxis([0 1]); colorbar;
     saveas(f3, fullfile(save_root_RT, 'summary_RT_coherence.pdf'));
 
-    f4 = figure;
-    imagesc(freq, 1:nCh, Phase_chan);
-    set(gca, 'YDir', 'normal');
-    xlabel('Frequency (Hz)'); ylabel('Channels');
-    title(sprintf('%s — Significant Phase-RT Phase Spectrum per Channel', animalName));
-    caxis([0 1]); colorbar;
-    saveas(f4, fullfile(save_root_RT, 'summary_RT_phase.pdf'));
-
-    % Combined across channels
-    valid_idx = ~isnan(limit_maxc) & ~isnan(limit_maxp);
-    coh_all = []; phase_all = [];
-    coh_perm_all = []; phase_perm_all = [];
+    % Combined across channels — average in complex space
+    valid_idx = ~isnan(limit_maxc);
+    coh_complex_all = [];
+    coh_perm_complex_all = [];
 
     for ch = find(valid_idx)
-        cd(fullfile(output_coh_RT, 'all_loc_difflev', num2str(ch)));
-        load coherence
-        load coh_perm
-        load phase_spec_perm
-        coh_all   = [coh_all; coh];
-        phase_all = [phase_all; phase_spec];
-        coh_perm_all   = cat(3, coh_perm_all, coh_perm);
-        phase_perm_all = cat(3, phase_perm_all, phase_spec_perm);
+        tmp_c = load(fullfile(output_coh_RT, 'all_loc_difflev', num2str(ch), 'coherence.mat'), 'coh_complex');
+        tmp_p = load(fullfile(output_coh_RT, 'all_loc_difflev', num2str(ch), 'coh_perm_complex.mat'), 'coh_perm_complex');
+        coh_complex_all      = [coh_complex_all; tmp_c.coh_complex];
+        coh_perm_complex_all = cat(3, coh_perm_complex_all, tmp_p.coh_perm_complex);
     end
 
-    if ~isempty(coh_all)
-        coh_avg = nanmean(coh_all, 1);
-        coh_perm_avg = nanmean(coh_perm_all, 3);
-        tmax_all = nanmax(coh_perm_avg, [], 2);
-        limit_avg = quantile(tmax_all, 0.95);
+    if ~isempty(coh_complex_all)
+        coh_avg      = abs(mean(coh_complex_all, 1));
+        perm_avg_cplx = mean(coh_perm_complex_all, 3);
+        coh_perm_avg = abs(perm_avg_cplx);
+        tmax_all     = max(coh_perm_avg, [], 2);
+        limit_avg    = quantile(tmax_all, 0.95);
 
         f5 = figure;
         plot_sig(freq, coh_avg, limit_avg, 'Frequency', 'Coherence');
         title(sprintf('%s — All Channels Combined - Phase vs RT Coherence', animalName));
         saveas(f5, fullfile(save_root_RT, 'combined_RT_coherence.pdf'));
-
-        phase_avg = nanmean(phase_all, 1);
-        phase_perm_avg = nanmean(phase_perm_all, 3);
-        tmaxp_all = nanmax(phase_perm_avg, [], 2);
-        limit_avgp = quantile(tmaxp_all, 0.95);
-
-        f6 = figure;
-        plot_sig(freq, phase_avg, limit_avgp, 'Frequency', 'Phase spec');
-        title(sprintf('%s — All Channels Combined - Phase vs RT Phase Spec', animalName));
-        saveas(f6, fullfile(save_root_RT, 'combined_RT_phase.pdf'));
     end
 
     %% Channel-average null distribution (per animal)
 
     fprintf('Computing RT channel-average permutation null for %s...\n', animalName);
 
-    coh_all_ch = NaN(nCh, nFreq);
-    coh_perm_all_ch = [];
+    coh_complex_all_ch      = NaN(nCh, nFreq);   % complex coherence per channel
+    coh_perm_complex_all_ch = [];                 % complex perm null [permut_n x nFreq x nCh]
 
     for ch = 1:nCh
         ch_folder = fullfile(output_coh_RT, 'all_loc_difflev', num2str(ch));
         if ~exist(ch_folder, 'dir'), continue; end
 
-        coh_file = fullfile(ch_folder, 'coherence.mat');
-        perm_file = fullfile(ch_folder, 'coh_perm.mat');
+        coh_file  = fullfile(ch_folder, 'coherence.mat');
+        perm_file = fullfile(ch_folder, 'coh_perm_complex.mat');
         if ~isfile(coh_file) || ~isfile(perm_file), continue; end
 
-        load(coh_file, 'coh');
-        load(perm_file, 'coh_perm');
+        tmp_c = load(coh_file,  'coh_complex');
+        tmp_p = load(perm_file, 'coh_perm_complex');
 
-        if any(isnan(coh)) || any(isnan(coh_perm(:))), continue; end
+        if any(isnan(tmp_c.coh_complex)) || any(isnan(tmp_p.coh_perm_complex(:))), continue; end
 
-        coh_all_ch(ch,:) = coh;
-        coh_perm_all_ch = cat(3, coh_perm_all_ch, coh_perm);
+        coh_complex_all_ch(ch,:)    = tmp_c.coh_complex;
+        coh_perm_complex_all_ch     = cat(3, coh_perm_complex_all_ch, tmp_p.coh_perm_complex);
     end
 
-    coh_chan_avg = mean(coh_all_ch, 1, 'omitnan');
+    % Average in complex space, decompose only at the end
+    coh_complex_chan_avg      = mean(coh_complex_all_ch, 1, 'omitnan');
+    coh_chan_avg              = abs(coh_complex_chan_avg);
+    phase_chan_avg            = angle(coh_complex_chan_avg);
 
-    coh_perm_chan_avg = mean(coh_perm_all_ch, 3);
-    tmax_chan_avg = max(coh_perm_chan_avg, [], 2);
-    thresh_chan_avg = quantile(tmax_chan_avg, 0.95);
+    coh_perm_chan_avg_complex = mean(coh_perm_complex_all_ch, 3);   % [permut_n x nFreq]
+    coh_perm_chan_avg         = abs(coh_perm_chan_avg_complex);
+    tmax_chan_avg             = max(coh_perm_chan_avg, [], 2);
+    thresh_chan_avg           = quantile(tmax_chan_avg, 0.95);
 
     save_file = fullfile(output_coh_RT, 'all_loc_difflev', 'channel_avg_results.mat');
-    save(save_file, 'coh_chan_avg', 'coh_perm_chan_avg', 'tmax_chan_avg', 'thresh_chan_avg', 'coh_all_ch', 'freq');
+    save(save_file, 'coh_chan_avg', 'coh_complex_chan_avg', 'phase_chan_avg', ...
+        'coh_perm_chan_avg_complex', 'coh_perm_chan_avg', ...
+        'tmax_chan_avg', 'thresh_chan_avg', 'coh_complex_all_ch', 'freq');
     fprintf('Saved RT channel-average results for %s\n', animalName);
 
     close all
@@ -255,8 +234,8 @@ end  % animal loop
 
 nAnimals = numel(animals);
 
-coh_monkey = [];
-perm_monkey = [];
+coh_complex_monkey  = [];   % [nAnimals x nFreq] complex
+perm_complex_monkey = [];   % [permut_n x nFreq x nAnimals] complex
 
 for a = 1:nAnimals
     animal_coh = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
@@ -269,24 +248,32 @@ for a = 1:nAnimals
     end
 
     tmp = load(avg_file);
-    coh_monkey = cat(1, coh_monkey, tmp.coh_chan_avg);
-    perm_monkey = cat(3, perm_monkey, tmp.coh_perm_chan_avg);
+    coh_complex_monkey  = cat(1, coh_complex_monkey,  tmp.coh_complex_chan_avg);
+    perm_complex_monkey = cat(3, perm_complex_monkey, tmp.coh_perm_chan_avg_complex);
 end
 
-if size(coh_monkey, 1) == nAnimals
+if size(coh_complex_monkey, 1) == nAnimals
     freq = tmp.freq;
 
-    coh_monkey_avg = mean(coh_monkey, 1);
+    % Average complex across animals, decompose only at the end
+    coh_complex_monkey_avg = mean(coh_complex_monkey, 1);
+    coh_monkey_avg         = abs(coh_complex_monkey_avg);
+    phase_monkey_avg       = angle(coh_complex_monkey_avg);
 
-    perm_monkey_avg = mean(perm_monkey, 3);
-    tmax_monkey_avg = max(perm_monkey_avg, [], 2);
+    % Per-animal magnitudes (for overlay plot)
+    coh_monkey = abs(coh_complex_monkey);
+
+    perm_monkey_avg_complex = mean(perm_complex_monkey, 3);   % [permut_n x nFreq]
+    perm_monkey_avg   = abs(perm_monkey_avg_complex);
+    tmax_monkey_avg   = max(perm_monkey_avg, [], 2);
     thresh_monkey_avg = quantile(tmax_monkey_avg, 0.95);
 
     monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_coherence/cp10_till_100', 'RT', 'all_loc_difflev');
     if ~exist(monkey_save_dir, 'dir'), mkdir(monkey_save_dir); end
     save(fullfile(monkey_save_dir, 'monkey_avg_results.mat'), ...
-        'coh_monkey_avg', 'perm_monkey_avg', 'tmax_monkey_avg', ...
-        'thresh_monkey_avg', 'coh_monkey', 'animals', 'freq');
+        'coh_monkey_avg', 'coh_complex_monkey_avg', 'phase_monkey_avg', ...
+        'perm_monkey_avg', 'tmax_monkey_avg', ...
+        'thresh_monkey_avg', 'coh_monkey', 'coh_complex_monkey', 'animals', 'freq');
 
     fprintf('RT Monkey-average threshold: %.4f\n', thresh_monkey_avg);
 

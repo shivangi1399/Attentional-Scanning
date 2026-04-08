@@ -13,6 +13,47 @@
 %   regression model DV ~ cos(phase) + sin(phase), yielding
 %   phi_pref = atan2(beta_sin, beta_cos).
 %
+% -------------------------------------------------------------------------
+% SIGNIFICANCE APPROACH — COHERENCE vs REGRESSION
+% -------------------------------------------------------------------------
+%
+%   Per-channel level:
+%     Coherence:   |coh_complex| >= 95th pctile of max(|coh_perm_complex|)
+%                  across frequencies (max-stat corrected); from
+%                  coh_perm_complex.mat per channel.
+%     Regression:  R2_phase(ch,f) > thresh_phase(ch), where thresh_phase is
+%                  the 95th pctile of max(null_R2_phase) across frequencies;
+%                  stored in reg_results.(dv).thresholds(ch).thresh_phase.
+%
+%   Channel-average level (per-animal row in Fig 4):
+%     Coherence:   coh_chan_avg >= thresh_chan_avg; both from
+%                  channel_avg_results.mat, computed by Coh_lfp_mua.m as
+%                  mean(|coh_complex|) vs permuted equivalent.
+%     Regression:  channel_avg_R.phase(f) > channel_avg_thresh.phase;
+%                  both from reg_results.(dv) in
+%                  multi_regression_channelwise_R2.mat, computed by
+%                  regress_stats_R2.m as mean(R2_phase) across channels vs
+%                  mean(null_R2_phase) across channels (max-stat corrected).
+%
+%   Monkey-average level (monkey-avg row in Fig 4):
+%     Coherence:   coh_monkey_avg >= thresh_monkey_avg; from
+%                  monkey_avg_results.mat, computed by Coh_lfp_mua.m.
+%     Regression:  monkey_avg_obs.phase(f) > thresh_monkey.phase; from
+%                  monkey_avg_results.mat in results_combined, computed by
+%                  regress_stats_R2.m as mean(channel_avg_R2) across animals
+%                  vs mean(channel_avg_null) across animals (max-stat).
+%
+%   KEY DIFFERENCE: Coherence significance tests phase consistency (magnitude
+%   of complex mean across channels/animals). Regression significance tests
+%   whether phase explains DV variance (R² increment). These are related but
+%   distinct: coherence requires consistent preferred direction; regression
+%   only requires a significant phase–DV relationship per channel.
+%
+%   Hit-only / miss-only figures: no significance overlay (no hit/miss-
+%   specific permutation tests have been run for regression).
+%
+% -------------------------------------------------------------------------
+%
 % The script produces the following outputs:
 %
 %   SINGLE-ANIMAL FIGURES (for the selected animal):
@@ -26,22 +67,24 @@
 %
 %   MONKEY-AVERAGE FIGURES (both animals combined):
 %     Fig 4 — Monkey-average preferred phase heatmap (per-animal circular
-%             mean across sig channels + cross-animal average)
-%     Fig 5 — Monkey-average pairwise phase consistency
+%             mean across all channels + cross-animal average); significance
+%             as described above.
 %
 %   HIT-ONLY / MISS-ONLY FIGURES:
 %     Per-animal and monkey-average heatmaps of preferred phase computed
 %     separately from hit trials and miss trials. For each trial subset,
 %     the coherence estimate uses DV-weighted mean phase and the regression
 %     estimate fits DV ~ cos(phase) + sin(phase).
+%     No significance overlay (hit/miss-specific permutation tests pending).
 
-clear all; close all; clc
+clearvars; close all; clc
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 1. SETTINGS
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-animal = 'klecks';   % 'hermes' or 'klecks'
+animal = 'hermes';   % 'hermes' or 'klecks'
+nonsig_alpha = 0.2;  % transparency for non-significant bins (0 = invisible, 1 = full color)
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 2. PATHS & DEPENDENCIES
@@ -72,9 +115,10 @@ nCh   = 64;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 3. LOAD COHERENCE PREFERRED PHASE
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% For each DV and channel, load the phase_spec field from the precomputed
-% coherence.mat file. phase_spec is the amplitude-weighted mean phase
-% direction (1 x nFreq) stored during the coherence analysis.
+% For each DV and channel, load coh_complex from the precomputed coherence.mat
+% file and extract the preferred phase as angle(coh_complex). coh_complex is the
+% amplitude-weighted complex mean across trials (1 x nFreq); its angle gives the
+% DV-weighted mean phase direction. Hit/miss uses angle(itc_complex) from itc.mat.
 
 coh_phase    = struct();
 coh_measures = {'mua', 'lfp', 'RT', 'hit_miss'};
@@ -88,64 +132,32 @@ for m = 1:length(coh_measures)
         coh_file  = fullfile(ch_folder, 'coherence.mat');
         if ~exist(coh_file, 'file'), continue; end
 
-        tmp = load(coh_file, 'phase_spec');
-        if isfield(tmp, 'phase_spec') && ~any(isnan(tmp.phase_spec))
-            phase_map(ch,:) = tmp.phase_spec;
+        tmp = load(coh_file, 'coh_complex');
+        if isfield(tmp, 'coh_complex') && ~any(isnan(tmp.coh_complex))
+            phase_map(ch,:) = angle(tmp.coh_complex);
         end
     end
 
     coh_phase.(measure) = phase_map;
 end
 
-% --- Hit/miss: compute preferred phase from ITC with inverted miss phases ---
-% Standard amplitude-weighted coherence is not meaningful for binary DVs:
-% multiplying unit vectors by 0/1 would simply discard all miss trials.
-% Instead we use the ITC-with-inverted-miss-phases approach (VanRullen 2016):
-%   1. Flip miss trial phases by pi so that, if hits and misses sit at
-%      opposite phases, all vectors now point in the same direction.
-%   2. Take the complex mean across ALL trials (hits + flipped misses).
-%   3. angle(complex mean) = preferred phase for hits.
-% This is analogous to phase_spec for continuous DVs: the resultant angle
-% tells you which phase is associated with hits (and the opposite with misses).
-
-data_file = fullfile(reg_root, 'ph_all_sess.mat');
-if exist(data_file, 'file')
-    tmp     = load(data_file, 'ph_comb');
-    ph_comb = tmp.ph_comb;
-
-    % Select all valid trials: hits (code 1) and misses (code 5)
-    all_idx     = find(ph_comb.trialinfo(:,20) == 1 | ph_comb.trialinfo(:,20) == 5);
-    hit_labels  = (ph_comb.trialinfo(all_idx, 20) == 1);
-    miss_labels = ~hit_labels;
-
-    hm_phase_map = NaN(nCh, nFreq);
-
-    for ch = 1:nCh
-        phase_ch = ph_comb.phase_all(all_idx, :, ch);   % [nTrials x nFreq]
-
-        % Invert miss phases by pi
-        phase_inv = phase_ch;
-        phase_inv(miss_labels, :) = mod(phase_ch(miss_labels, :) + pi, 2*pi) - pi;
-
-        % Complex mean — angle gives the preferred hit phase
-        for f = 1:nFreq
-            cavg = mean(exp(1i * phase_inv(:, f)));
-            hm_phase_map(ch, f) = angle(cavg);
-        end
+% --- Hit/miss: preferred phase = angle(itc_complex), loaded directly ---
+hm_phase_map = NaN(nCh, nFreq);
+for ch = 1:nCh
+    itc_file = fullfile(corr_root, 'hit_miss', 'all_loc_difflev', num2str(ch), 'itc.mat');
+    if ~exist(itc_file, 'file'), continue; end
+    tmp = load(itc_file, 'itc_complex');
+    if isfield(tmp, 'itc_complex') && ~any(isnan(tmp.itc_complex))
+        hm_phase_map(ch,:) = angle(tmp.itc_complex);
     end
-
-    coh_phase.hit_miss = hm_phase_map;
-    clear ph_comb
-else
-    warning('ph_all_sess.mat not found — hit_miss coherence phase remains NaN');
 end
+coh_phase.hit_miss = hm_phase_map;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 4. LOAD REGRESSION PREFERRED PHASE
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % For each DV, load phi_pref from the channelwise multiple regression
-% results. phi_pref = atan2(beta_sin, beta_cos) from the model
-% DV ~ cos(phase) + sin(phase) + intercept.
+% results. phi_pref = atan2(beta_sin, beta_cos) from the full model..
 
 reg_file  = fullfile(reg_root, 'multi_regression_channelwise_R2.mat');
 has_reg   = exist(reg_file, 'file');
@@ -193,9 +205,9 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Significance is determined by permutation testing. A channel x frequency
 % bin is significant if the observed value exceeds the 95th percentile of
-% the distribution of per-iteration maxima (cluster-corrected across freq).
+% the distribution of per-iteration maxima (max-corrected across freq).
 
-% --- Coherence significance (from coh_perm.mat) ---
+% --- Coherence significance (from coh_perm_complex.mat) ---
 coh_sig = struct();
 for m = 1:length(coh_measures)
     measure = coh_measures{m};
@@ -204,11 +216,11 @@ for m = 1:length(coh_measures)
     for ch = 1:nCh
         ch_folder = fullfile(coh_root, measure, 'all_loc_difflev', num2str(ch));
         coh_file  = fullfile(ch_folder, 'coherence.mat');
-        perm_file = fullfile(ch_folder, 'coh_perm.mat');
+        perm_file = fullfile(ch_folder, 'coh_perm_complex.mat');
         if ~exist(coh_file, 'file') || ~exist(perm_file, 'file'), continue; end
 
-        tmp = load(coh_file, 'coh');   val = tmp.coh;
-        tmp = load(perm_file, 'coh_perm');  prm = tmp.coh_perm;
+        tmp = load(coh_file, 'coh_complex');          val = abs(tmp.coh_complex);
+        tmp = load(perm_file, 'coh_perm_complex');    prm = abs(tmp.coh_perm_complex);
         if any(isnan(val)) || any(isnan(prm(:))), continue; end
 
         tmax = max(prm, [], 2);           % max across frequencies per iteration
@@ -220,10 +232,8 @@ for m = 1:length(coh_measures)
 end
 
 % --- Hit/miss significance from ITC permutation (itc.mat / itc_perm.mat) ---
-% The ITC magnitude and its permutation null live in the phase_correlation
-% results (computed in Corr_RT_hitmiss.m). We apply the same cluster-
-% corrected threshold: observed ITC >= 95th percentile of per-iteration
-% frequency-maxima from the shuffled-label null distribution.
+% Consistent with mua/lfp/RT: load complex values, take abs() inline.
+% observed |itc_complex| >= 95th percentile of max(|itc_perm_complex|) across freq.
 hm_sig_map = false(nCh, nFreq);
 for ch = 1:nCh
     ch_folder = fullfile(corr_root, 'hit_miss', 'all_loc_difflev', num2str(ch));
@@ -231,8 +241,8 @@ for ch = 1:nCh
     perm_file = fullfile(ch_folder, 'itc_perm.mat');
     if ~exist(itc_file, 'file') || ~exist(perm_file, 'file'), continue; end
 
-    tmp = load(itc_file, 'itc');        val = tmp.itc;
-    tmp = load(perm_file, 'itc_perm');  prm = tmp.itc_perm;
+    tmp = load(itc_file,  'itc_complex');       val = abs(tmp.itc_complex);
+    tmp = load(perm_file, 'itc_perm_complex');  prm = abs(tmp.itc_perm_complex);
     if any(isnan(val)) || any(isnan(prm(:))), continue; end
 
     tmax = max(prm, [], 2);
@@ -272,8 +282,7 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 6. CIRCULAR PASTEL COLORMAP
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Phase is circular (-pi to pi), so the colormap must wrap. We use a
-% pastel HSV ring (low saturation, high brightness) for readability.
+% Phase is circular (-pi to pi), so the colormap must wrap
 
 n_cmap   = 256;
 hue      = linspace(0, 1, n_cmap+1)'; hue = hue(1:end-1);
@@ -303,8 +312,7 @@ reg_subtitles = {'MUA (atan2(\beta_{sin},\beta_{cos}))', ...
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Each row is a DV, each column is a method. Colour encodes the preferred
 % phase angle. Significant channel-frequency bins are shown at full opacity;
-% non-significant bins are faded to 20% so the overall pattern remains
-% visible while significance is clear.
+% non-significant bins are faded.
 
 f1 = figure('Name', ['Preferred Phase - ' animal], ...
     'Units', 'centimeters', 'Position', [1 1 36 40]);
@@ -318,9 +326,9 @@ for row = 1:nDVs
     data_coh  = coh_phase.(key);
     h_img     = imagesc(freq, 1:nCh, data_coh);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  caxis([-pi pi]);
+    colormap(gca, cmap_circ);  clim([-pi pi]);
 
-    alpha_coh = ones(nCh, nFreq) * 0.2;
+    alpha_coh = ones(nCh, nFreq) * nonsig_alpha;
     alpha_coh(coh_sig.(key)) = 1;
     set(h_img, 'AlphaData', alpha_coh);
 
@@ -339,9 +347,9 @@ for row = 1:nDVs
         nR = size(data_reg, 1);  nF = size(data_reg, 2);
         h_img2 = imagesc(freqs_reg, 1:nR, data_reg);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ);  caxis([-pi pi]);
+        colormap(gca, cmap_circ);  clim([-pi pi]);
 
-        alpha_reg = ones(nR, nF) * 0.2;
+        alpha_reg = ones(nR, nF) * nonsig_alpha;
         alpha_reg(reg_sig.(key)(1:nR, 1:nF)) = 1;
         set(h_img2, 'AlphaData', alpha_reg);
     end
@@ -573,10 +581,19 @@ fprintf('Figure 3 saved.\n');
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 8. MONKEY-AVERAGE: COLLECT DATA FROM BOTH ANIMALS
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Repeat the data loading for both animals. For each animal, compute:
-%   (a) circular mean of preferred phase across significant channels (1 x nFreq)
-%   (b) pairwise circular correlation between DVs (nPairs x nFreq)
-% These per-animal summaries are then averaged across animals.
+% For each animal, preferred phase is loaded from precomputed complex-valued
+% summary files:
+%
+%   Level 1 (per channel): phase = angle(coh_complex_all_ch) loaded from
+%     channel_avg_results.mat; significance from per-channel coh_perm_complex.mat.
+%   Level 2 (per animal):  phase = angle(coh_complex_chan_avg) from
+%     channel_avg_results.mat; significance: coh_chan_avg >= thresh_chan_avg.
+%   Level 3 (monkey avg):  phase = angle(coh_complex_monkey_avg) from
+%     monkey_avg_results.mat; significance: coh_monkey_avg >= thresh_monkey_avg.
+%
+% Hit/miss uses the ITC equivalent at each level (itc_complex / itc_perm).
+% Per-animal level-2 summaries feed Figure 4; pairwise circular correlations
+% across channels (level 1) feed Figure 5.
 
 animals_all  = {'hermes', 'klecks'};
 nAnimals     = numel(animals_all);
@@ -589,10 +606,14 @@ reg_dvs_all    = {'MUA_ERP_ampl_all', 'LFP_ERP_ampl_all', 'RT', 'hit_miss'};
 reg_labels_all = {'mua', 'lfp', 'RT', 'hit_miss'};
 
 % Preallocate per-animal storage
-animal_coh_avg     = cell(nAnimals, 1);   % circular mean phase (coherence)
-animal_reg_avg     = cell(nAnimals, 1);   % circular mean phase (regression)
+animal_coh_avg     = cell(nAnimals, 1);   % level-2 phase: angle(complex channel avg), coherence
+animal_coh_avg_sig = cell(nAnimals, 1);   % level-2 significance mask for channel avg
+animal_reg_avg     = cell(nAnimals, 1);   % level-2 phase: circular mean across all channels, regression
+animal_reg_avg_sig = cell(nAnimals, 1);   % level-2 significance mask: channel_avg_R.phase > channel_avg_thresh.phase
 animal_rho_coh_all = cell(nAnimals, 1);   % pairwise rho (coherence)
 animal_rho_reg_all = cell(nAnimals, 1);   % pairwise rho (regression)
+animal_coh_sig = cell(nAnimals, 1);   % per-channel significance masks (coherence)
+animal_reg_sig = cell(nAnimals, 1);   % per-channel significance masks (regression)
 
 for a = 1:nAnimals
     animalName = animals_all{a};
@@ -608,65 +629,76 @@ for a = 1:nAnimals
     a_nCh   = 64;
 
     % --- Load coherence preferred phase + significance masks ---
+    % Level 1 phase:  angle(coh_complex_all_ch) from channel_avg_results.mat.
+    % Level 1 sig:    |coh_complex_all_ch(ch,:)| >= quantile(max(|perm|),0.95)
+    %                 from per-channel coh_perm_complex.mat (max-statistic test).
+    % Level 2 phase:  angle(coh_complex_chan_avg) from channel_avg_results.mat.
+    % Level 2 sig:    coh_chan_avg >= thresh_chan_avg (same file).
     a_coh_phase = struct();
     a_coh_sig   = struct();
+    a_coh_avg   = struct();
 
     for m = 1:length(coh_measures)
         measure   = coh_measures{m};
-        phase_map = NaN(a_nCh, a_nFreq);
         sig_map   = false(a_nCh, a_nFreq);
 
-        for ch = 1:a_nCh
-            ch_folder = fullfile(a_coh_root, measure, 'all_loc_difflev', num2str(ch));
-            coh_file  = fullfile(ch_folder, 'coherence.mat');
-            perm_file = fullfile(ch_folder, 'coh_perm.mat');
-            if ~exist(coh_file, 'file'), continue; end
+        % Level 1 phase & Level 2: load from precomputed channel_avg_results.mat.
+        %   coh_complex_all_ch   [nCh x nFreq] — per-channel complex coherence
+        %   coh_complex_chan_avg  [1 x nFreq]   — complex mean across channels (level 2)
+        %   coh_chan_avg / thresh_chan_avg        — magnitude and perm threshold (level 2)
+        avg_file = fullfile(a_coh_root, measure, 'all_loc_difflev', 'channel_avg_results.mat');
+        if isfile(avg_file)
+            tmp_avg   = load(avg_file, 'coh_complex_all_ch', 'coh_complex_chan_avg', ...
+                             'coh_chan_avg', 'thresh_chan_avg');
+            phase_map = angle(tmp_avg.coh_complex_all_ch);   % level 1 phase
 
-            tmp = load(coh_file, 'phase_spec');
-            if isfield(tmp, 'phase_spec') && ~any(isnan(tmp.phase_spec))
-                phase_map(ch,:) = tmp.phase_spec;
+            % Level 1 significance: per-channel max-statistic perm threshold
+            for ch = 1:a_nCh
+                perm_file = fullfile(a_coh_root, measure, 'all_loc_difflev', ...
+                                     num2str(ch), 'coh_perm_complex.mat');
+                if ~isfile(perm_file), continue; end
+                tmp_p = load(perm_file, 'coh_perm_complex');
+                prm   = tmp_p.coh_perm_complex;
+                if any(isnan(prm(:))), continue; end
+                thr_c = quantile(max(abs(prm), [], 2), 0.95);
+                val   = abs(tmp_avg.coh_complex_all_ch(ch,:));
+                if any(isnan(val)), continue; end
+                sig_map(ch,:) = val >= thr_c;
             end
 
-            if exist(perm_file, 'file')
-                tmp_c = load(coh_file, 'coh');
-                tmp_p = load(perm_file, 'coh_perm');
-                if ~any(isnan(tmp_c.coh)) && ~any(isnan(tmp_p.coh_perm(:)))
-                    tmax = max(tmp_p.coh_perm, [], 2);
-                    thr  = quantile(tmax, 0.95);
-                    sig_map(ch,:) = tmp_c.coh >= thr;
-                end
-            end
+            % Level 2: angle of complex channel average + significance mask
+            ph_avg  = angle(tmp_avg.coh_complex_chan_avg);
+            sig_avg = tmp_avg.coh_chan_avg >= tmp_avg.thresh_chan_avg;
+            a_coh_avg.(measure)     = ph_avg;    % raw phase, no NaN masking
+            a_coh_avg_sig.(measure) = sig_avg;   % significance stored separately
+        else
+            phase_map = NaN(a_nCh, a_nFreq);
+            a_coh_avg.(measure)     = NaN(1, a_nFreq);
+            a_coh_avg_sig.(measure) = false(1, a_nFreq);
         end
 
         a_coh_phase.(measure) = phase_map;
         a_coh_sig.(measure)   = sig_map;
     end
 
-    % --- Hit/miss: ITC with inverted miss phases (same as section 3) ---
+    % --- Hit/miss coherence preferred phase + significance masks ---
+    % Level 1 phase:  angle(itc_complex) per channel from itc.mat.
+    % Level 1 sig:    itc >= quantile(max(itc_perm),0.95) from itc_perm.mat.
+    % Level 2 phase:  angle(itc_complex_chan_avg) if saved, else phase_chan_avg_itc,
+    %                 from channel_avg_results_itc.mat; masked by itc_chan_avg >= thresh.
     a_corr_root = fullfile(a_base, 'phase_correlation', 'cp10_till_100');
-    a_data_file = fullfile(a_reg_root, 'ph_all_sess.mat');
-    if exist(a_data_file, 'file')
-        tmp_ph  = load(a_data_file, 'ph_comb');
-        a_ph    = tmp_ph.ph_comb;
-
-        a_all_idx     = find(a_ph.trialinfo(:,20) == 1 | a_ph.trialinfo(:,20) == 5);
-        a_hit_labels  = (a_ph.trialinfo(a_all_idx, 20) == 1);
-        a_miss_labels = ~a_hit_labels;
-
-        hm_phase = NaN(a_nCh, a_nFreq);
-        for ch = 1:a_nCh
-            phase_ch  = a_ph.phase_all(a_all_idx, :, ch);
-            phase_inv = phase_ch;
-            phase_inv(a_miss_labels, :) = mod(phase_ch(a_miss_labels, :) + pi, 2*pi) - pi;
-            for f = 1:a_nFreq
-                hm_phase(ch, f) = angle(mean(exp(1i * phase_inv(:, f))));
-            end
+    hm_phase = NaN(a_nCh, a_nFreq);
+    for ch = 1:a_nCh
+        itc_file = fullfile(a_corr_root, 'hit_miss', 'all_loc_difflev', num2str(ch), 'itc.mat');
+        if ~exist(itc_file, 'file'), continue; end
+        tmp = load(itc_file, 'itc_complex');
+        if isfield(tmp, 'itc_complex') && ~any(isnan(tmp.itc_complex))
+            hm_phase(ch,:) = angle(tmp.itc_complex);
         end
-        a_coh_phase.hit_miss = hm_phase;
-        clear a_ph
     end
+    a_coh_phase.hit_miss = hm_phase;
 
-    % Hit/miss significance from ITC permutation
+    % Level 1 significance: per-channel max-statistic test on ITC
     hm_sig = false(a_nCh, a_nFreq);
     for ch = 1:a_nCh
         ch_folder = fullfile(a_corr_root, 'hit_miss', 'all_loc_difflev', num2str(ch));
@@ -674,8 +706,8 @@ for a = 1:nAnimals
         perm_file = fullfile(ch_folder, 'itc_perm.mat');
         if ~exist(itc_file, 'file') || ~exist(perm_file, 'file'), continue; end
 
-        tmp_i = load(itc_file, 'itc');        val = tmp_i.itc;
-        tmp_p = load(perm_file, 'itc_perm');  prm = tmp_p.itc_perm;
+        tmp_i = load(itc_file,  'itc_complex');       val = abs(tmp_i.itc_complex);
+        tmp_p = load(perm_file, 'itc_perm_complex');  prm = abs(tmp_p.itc_perm_complex);
         if any(isnan(val)) || any(isnan(prm(:))), continue; end
 
         tmax = max(prm, [], 2);
@@ -684,22 +716,26 @@ for a = 1:nAnimals
     end
     a_coh_sig.hit_miss = hm_sig;
 
-    % --- Circular mean across significant channels (coherence) ---
-    a_coh_avg = struct();
-    for m = 1:nDVs
-        key = row_keys{m};
-        ph  = a_coh_phase.(key);
-        sg  = a_coh_sig.(key);
-        avg_ph = NaN(1, a_nFreq);
-        for f = 1:a_nFreq
-            valid = sg(:,f) & ~isnan(ph(:,f));
-            if sum(valid) >= 1
-                avg_ph(f) = angle(mean(exp(1i * ph(valid,f))));
-            end
+    % Level 2: load angle(itc_complex_chan_avg) if available, else phase_chan_avg_itc,
+    % from channel_avg_results_itc.mat; NaN where itc_chan_avg < thresh_chan_avg_itc.
+    hm_avg_file = fullfile(a_corr_root, 'hit_miss', 'all_loc_difflev', 'channel_avg_results_itc.mat');
+    if isfile(hm_avg_file)
+        tmp_hm = load(hm_avg_file);
+        if isfield(tmp_hm, 'itc_complex_chan_avg')
+            ph_hm = angle(tmp_hm.itc_complex_chan_avg);
+        else
+            ph_hm = tmp_hm.phase_chan_avg_itc;
         end
-        a_coh_avg.(key) = avg_ph;
+        sig_hm = tmp_hm.itc_chan_avg >= tmp_hm.thresh_chan_avg_itc;
+        a_coh_avg.hit_miss     = ph_hm;    % raw phase, no NaN masking
+        a_coh_avg_sig.hit_miss = sig_hm;   % significance stored separately
+    else
+        a_coh_avg.hit_miss     = NaN(1, a_nFreq);
+        a_coh_avg_sig.hit_miss = false(1, a_nFreq);
     end
-    animal_coh_avg{a} = a_coh_avg;
+
+    animal_coh_avg{a}     = a_coh_avg;
+    animal_coh_avg_sig{a} = a_coh_avg_sig;
 
     % --- Load regression preferred phase + significance masks ---
     a_reg_file  = fullfile(a_reg_root, 'multi_regression_channelwise_R2.mat');
@@ -759,24 +795,41 @@ for a = 1:nAnimals
         end
     end
 
-    % --- Circular mean across significant channels (regression) ---
-    a_reg_avg = struct();
+    % --- Circular mean across channels (regression) ---
+    % avg_ph: circular mean over ALL valid (non-NaN) channels.
+    % sig_f:  channel_avg_R.phase(f) > channel_avg_thresh.phase, i.e. the
+    %         observed mean R² across channels exceeds the 95th pctile of
+    %         the max-stat null (precomputed in regress_stats_R2.m and stored
+    %         in reg_results.(dv).channel_avg_R / .channel_avg_thresh).
+    a_reg_avg     = struct();
+    a_reg_avg_sig = struct();
     for m = 1:length(reg_labels_all)
         key = reg_labels_all{m};
+        dv  = reg_dvs_all{m};
         ph  = a_reg_phase.(key);
-        sg  = a_reg_sig.(key);
-        nR  = min(size(ph,1), size(sg,1));
-        nF  = min(size(ph,2), size(sg,2));
+        nF  = size(ph, 2);
         avg_ph = NaN(1, nF);
+        sig_f  = false(1, nF);
         for f = 1:nF
-            valid = sg(1:nR,f) & ~isnan(ph(1:nR,f));
-            if sum(valid) >= 1
-                avg_ph(f) = angle(mean(exp(1i * ph(valid,f))));
+            valid_all = ~isnan(ph(:,f));
+            if any(valid_all)
+                avg_ph(f) = angle(mean(exp(1i * ph(valid_all,f))));
             end
         end
-        a_reg_avg.(key) = avg_ph;
+        % Channel-average significance from precomputed R² null distribution
+        if a_has_reg && isfield(a_rr, dv) && ...
+                isfield(a_rr.(dv), 'channel_avg_R') && ...
+                isfield(a_rr.(dv), 'channel_avg_thresh')
+            obs_avg = a_rr.(dv).channel_avg_R.phase;
+            thr_avg = a_rr.(dv).channel_avg_thresh.phase;
+            nF_s = min(length(obs_avg), nF);
+            sig_f(1:nF_s) = obs_avg(1:nF_s) > thr_avg;
+        end
+        a_reg_avg.(key)     = avg_ph;
+        a_reg_avg_sig.(key) = sig_f;
     end
-    animal_reg_avg{a} = a_reg_avg;
+    animal_reg_avg{a}     = a_reg_avg;
+    animal_reg_avg_sig{a} = a_reg_avg_sig;
 
     % --- Pairwise phase consistency (coherence) ---
     a_rho_coh = NaN(nPairs, a_nFreq);
@@ -808,13 +861,60 @@ for a = 1:nAnimals
         end
     end
     animal_rho_reg_all{a} = a_rho_reg;
+    animal_coh_sig{a}     = a_coh_sig;
+    animal_reg_sig{a}     = a_reg_sig;
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% FIGURE 4 — Monkey-Average Preferred Phase Heatmap
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% For each DV: row 1 = hermes, row 2 = klecks, row 3 = circular mean
-% across the two animals. Transparent where no data.
+% For each DV, 3 rows per column:
+%   Row 1 = hermes  — level-2 phase: angle(coh_complex_chan_avg), NaN where not sig
+%   Row 2 = klecks  — same
+%   Row 3 = monkey avg — coherence: angle(coh_complex_monkey_avg) from saved file;
+%                        regression: angle(mean(exp(i*[row1;row2]))) across animals
+% Transparent where NaN (not significant or no data).
+
+% Level 3 monkey-average preferred phase: loaded from precomputed files,
+% phase = angle(complex monkey average), NaN where magnitude < perm threshold.
+%   MUA/LFP/RT: angle(coh_complex_monkey_avg) from monkey_avg_results.mat,
+%               masked by coh_monkey_avg >= thresh_monkey_avg.
+%   Hit/miss:   angle(itc_complex_monkey_avg) if saved, else phase_monkey_avg_itc,
+%               from monkey_avg_results_itc.mat; masked by itc_monkey_avg >= thresh.
+results_combined_pre = '/mnt/hpc/projects/MWSampling/4Shivangi/results_combined';
+coh_combined_pre     = fullfile(results_combined_pre, 'phase_coherence',  'cp10_till_100');
+corr_combined_pre    = fullfile(results_combined_pre, 'phase_correlation', 'cp10_till_100');
+
+monkey_avg_phase = struct();
+monkey_avg_sig   = struct();
+dv_keys_coh = {'mua','lfp','RT'};
+for m = 1:length(dv_keys_coh)
+    key     = dv_keys_coh{m};
+    mk_file = fullfile(coh_combined_pre, key, 'all_loc_difflev', 'monkey_avg_results.mat');
+    if isfile(mk_file)
+        mk    = load(mk_file, 'coh_complex_monkey_avg', 'coh_monkey_avg', 'thresh_monkey_avg');
+        monkey_avg_phase.(key) = angle(mk.coh_complex_monkey_avg);   % raw phase
+        monkey_avg_sig.(key)   = mk.coh_monkey_avg >= mk.thresh_monkey_avg;
+    else
+        monkey_avg_phase.(key) = NaN(1, nFreq);
+        monkey_avg_sig.(key)   = false(1, nFreq);
+    end
+end
+
+hm_mk_file = fullfile(corr_combined_pre, 'hit_miss_itc', 'all_loc_difflev', 'monkey_avg_results_itc.mat');
+if isfile(hm_mk_file)
+    hm_mk = load(hm_mk_file);
+    if isfield(hm_mk, 'itc_complex_monkey_avg')
+        ph_hm_mk = angle(hm_mk.itc_complex_monkey_avg);
+    else
+        ph_hm_mk = hm_mk.phase_monkey_avg_itc;
+    end
+    monkey_avg_phase.hit_miss = ph_hm_mk;
+    monkey_avg_sig.hit_miss   = hm_mk.itc_monkey_avg >= hm_mk.thresh_monkey_avg_itc;
+else
+    monkey_avg_phase.hit_miss = NaN(1, nFreq);
+    monkey_avg_sig.hit_miss   = false(1, nFreq);
+end
 
 f4 = figure('Name', 'Monkey-Avg Preferred Phase', ...
     'Units', 'centimeters', 'Position', [1 1 36 40]);
@@ -827,20 +927,28 @@ for row = 1:nDVs
     subplot(nDVs, 2, (row-1)*2 + 1);
     phase_stack = NaN(3, nFreq);
     for a = 1:nAnimals
-        phase_stack(a,:) = animal_coh_avg{a}.(key);
+        phase_stack(a,:) = animal_coh_avg{a}.(key);   % raw phase (no NaN masking)
     end
-    phase_stack(3,:) = angle(mean(exp(1i * phase_stack(1:nAnimals,:)), 1, 'omitnan'));
+    phase_stack(3,:) = monkey_avg_phase.(key);         % level 3: raw phase
+
+    % Build alpha: NaN (no data) = 0, non-sig = nonsig_alpha, sig = 1
+    alpha_stack = ones(3, nFreq) * nonsig_alpha;
+    alpha_stack(isnan(phase_stack)) = 0;
+    for a = 1:nAnimals
+        alpha_stack(a, animal_coh_avg_sig{a}.(key)) = 1;
+    end
+    alpha_stack(3, monkey_avg_sig.(key)) = 1;
 
     h_img = imagesc(freq, 1:3, phase_stack);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  caxis([-pi pi]);
-    set(h_img, 'AlphaData', ~isnan(phase_stack));
+    colormap(gca, cmap_circ);  clim([-pi pi]);
+    set(h_img, 'AlphaData', alpha_stack);
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
     title(sprintf('%s — Coherence', row_labels{row}), 'FontSize', 9);
     set(gca, 'FontSize', 8, 'Box', 'on');
     if row == 1
-        text(0.5, 1.22, 'Coherence (phase\_spec)', 'Units', 'normalized', ...
+        text(0.5, 1.22, 'Coherence (coh\_complex)', 'Units', 'normalized', ...
             'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
     end
 
@@ -854,10 +962,39 @@ for row = 1:nDVs
     end
     phase_stack_r(3,:) = angle(mean(exp(1i * phase_stack_r(1:nAnimals,:)), 1, 'omitnan'));
 
-    h_img2 = imagesc(freqs_reg, 1:3, phase_stack_r);
+    % Build alpha: NaN (no data) = 0, non-sig = nonsig_alpha, sig = 1
+    % Per-animal rows: channel_avg_R.phase > channel_avg_thresh.phase
+    %   (mean R² across channels vs max-stat null; from regress_stats_R2.m)
+    % Monkey-avg row:  monkey_avg_obs.phase > thresh_monkey.phase
+    %   (mean channel_avg_R² across animals vs max-stat null; from
+    %    regress_stats_R2.m, saved in results_combined/monkey_avg_results.mat)
+    alpha_stack_r = ones(3, length(freqs_reg)) * nonsig_alpha;
+    alpha_stack_r(isnan(phase_stack_r)) = 0;
+    for a = 1:nAnimals
+        sig_vals = animal_reg_avg_sig{a}.(key);
+        nF = min(length(sig_vals), length(freqs_reg));
+        alpha_stack_r(a, find(sig_vals(1:nF))) = 1;
+    end
+    % Monkey-average significance: load from precomputed monkey_avg_results.mat
+    dv_idx = find(strcmp(reg_labels_all, key), 1);
+    mk_sig_r = false(1, length(freqs_reg));
+    if ~isempty(dv_idx)
+        mk_avg_file = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined', ...
+            'multi_lin_reg', 'cp10_till_100', reg_dvs_all{dv_idx}, 'monkey_avg_results.mat');
+        if isfile(mk_avg_file)
+            mk_r = load(mk_avg_file, 'monkey_avg_obs', 'thresh_monkey');
+            nF_r = min(length(mk_r.monkey_avg_obs.phase), length(freqs_reg));
+            mk_sig_r(1:nF_r) = mk_r.monkey_avg_obs.phase(1:nF_r) > mk_r.thresh_monkey.phase;
+        else
+            warning('monkey_avg_results.mat not found for %s regression; monkey-avg row unfaded.', key);
+        end
+    end
+    alpha_stack_r(3, mk_sig_r) = 1;
+
+    h_img2 = imagesc(freqs_reg, 1:3, phase_stack_r); %check from here for the new significance
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  caxis([-pi pi]);
-    set(h_img2, 'AlphaData', ~isnan(phase_stack_r));
+    colormap(gca, cmap_circ);  clim([-pi pi]);
+    set(h_img2, 'AlphaData', alpha_stack_r);
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
     title(sprintf('%s — Regression', row_labels{row}), 'FontSize', 9);
@@ -874,64 +1011,10 @@ cb.TickLabels = {'-\pi', '-\pi/2', '0', '\pi/2', '\pi'};
 cb.Position   = [0.25 0.02 0.5 0.015];
 cb.Label.String = 'Preferred Phase (rad)';
 
-sgtitle('Monkey-Average Preferred Phase (circular mean across sig channels)', ...
+sgtitle('Preferred Phase', ...
     'FontSize', 14, 'FontWeight', 'bold');
 print(f4, fullfile(monkey_save_root, 'monkey_avg_preferred_phase.pdf'), '-dpdf');
 fprintf('Figure 4 saved.\n');
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% FIGURE 5 — Monkey-Average Phase Consistency Across Measures
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Thin lines = individual animals, thick line = average across animals.
-
-rho_coh_monkey = mean(cat(3, animal_rho_coh_all{:}), 3, 'omitnan');
-rho_reg_monkey = mean(cat(3, animal_rho_reg_all{:}), 3, 'omitnan');
-
-f5 = figure('Name', 'Monkey-Avg Phase Consistency', ...
-    'Units', 'centimeters', 'Position', [1 1 42 36]);
-set(f5, 'PaperUnits', 'centimeters', 'PaperSize', [42 36], 'PaperPosition', [0 0 42 36]);
-
-for p = 1:nPairs
-    % Coherence column
-    subplot(nPairs, 2, (p-1)*2 + 1);
-    hold on;
-    for a = 1:nAnimals
-        plot(freq, animal_rho_coh_all{a}(p,:), 'Color', [animal_colors(a,:) 0.4], 'LineWidth', 1);
-    end
-    plot(freq, rho_coh_monkey(p,:), 'Color', pair_colors(p,:), 'LineWidth', 2.5);
-    yline(0, 'k--', 'LineWidth', 0.5);
-    xlabel('Frequency (Hz)'); ylabel('\rho_{circ}');
-    title(sprintf('Coh: %s', measure_pairs{p,3}), 'FontSize', 9);
-    ylim([-1 1]);
-    set(gca, 'FontSize', 8, 'Box', 'on');
-    if p == 1
-        text(0.5, 1.22, 'Coherence', 'Units', 'normalized', ...
-            'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
-        legend([animals_all, {'Monkey avg'}], 'Location', 'best', 'FontSize', 6);
-    end
-
-    % Regression column
-    subplot(nPairs, 2, (p-1)*2 + 2);
-    hold on;
-    for a = 1:nAnimals
-        plot(freqs_reg, animal_rho_reg_all{a}(p,:), 'Color', [animal_colors(a,:) 0.4], 'LineWidth', 1);
-    end
-    plot(freqs_reg, rho_reg_monkey(p,:), 'Color', pair_colors(p,:), 'LineWidth', 2.5);
-    yline(0, 'k--', 'LineWidth', 0.5);
-    xlabel('Frequency (Hz)'); ylabel('\rho_{circ}');
-    title(sprintf('Reg: %s', measure_pairs{p,3}), 'FontSize', 9);
-    ylim([-1 1]);
-    set(gca, 'FontSize', 8, 'Box', 'on');
-    if p == 1
-        text(0.5, 1.22, 'Regression', 'Units', 'normalized', ...
-            'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
-    end
-end
-
-sgtitle('Monkey-Average Pairwise Phase Consistency (thin = per animal, thick = average)', ...
-    'FontSize', 12, 'FontWeight', 'bold');
-print(f5, fullfile(monkey_save_root, 'monkey_avg_phase_consistency.pdf'), '-dpdf');
-fprintf('Figure 5 saved.\n');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 9. HIT-ONLY AND MISS-ONLY PREFERRED PHASE
@@ -943,7 +1026,7 @@ fprintf('Figure 5 saved.\n');
 %   Coherence estimate:  angle( sum( DV .* exp(i*phase) ) )
 %     = DV-weighted mean phase direction
 %
-%   Regression estimate: fit DV ~ cos(phase) + sin(phase) + 1
+%   Regression estimate: fit full model
 %     phi_pref = atan2(beta_sin, beta_cos)
 %
 % Trial alignment: some DVs (e.g. MUA, LFP) have different trial counts
@@ -1053,14 +1136,16 @@ for a = 1:nAnimals
 
                 if strcmp(lbl, 'hit_miss')
                     % For binary hit_miss, within hit-only trials the
-                    % DV is constant (all 1s), so DV-weighted coherence
-                    % and regression are degenerate. Use the circular
-                    % mean phase (ITC direction) instead — this is the
-                    % preferred phase at which hits occur.
-                    hit_coh_map(ch,f) = angle(mean(exp(1i * ph_h(ok_h))));
+                    % DV is constant (all 1s), so use the complex ITC
+                    % (mean of unit phasors) — angle gives preferred phase.
+                    if any(ok_h)
+                        hit_coh_map(ch,f) = mean(exp(1i * ph_h(ok_h)));
+                    end
                     hit_reg_map(ch,f) = angle(mean(exp(1i * ph_h(ok_h))));
                 else
-                    hit_coh_map(ch,f) = angle(sum(dv_h(ok_h) .* exp(1i * ph_h(ok_h))));
+                    if any(ok_h)
+                        hit_coh_map(ch,f) = sum(dv_h(ok_h) .* exp(1i * ph_h(ok_h)));
+                    end
 
                     % Regression: full model matching regress_stats_R2.m
                     % DV ~ 1 + pup_baseline + MUA_baseline + amp + sin(phase) + cos(phase)
@@ -1083,12 +1168,15 @@ for a = 1:nAnimals
 
                 if strcmp(lbl, 'hit_miss')
                     % Same as above: DV is constant (all 0s for misses),
-                    % so use circular mean phase — the preferred phase
-                    % at which misses occur.
-                    miss_coh_map(ch,f) = angle(mean(exp(1i * ph_m(ok_m))));
+                    % so use the complex ITC — angle gives preferred phase.
+                    if any(ok_m)
+                        miss_coh_map(ch,f) = mean(exp(1i * ph_m(ok_m)));
+                    end
                     miss_reg_map(ch,f) = angle(mean(exp(1i * ph_m(ok_m))));
                 else
-                    miss_coh_map(ch,f) = angle(sum(dv_m(ok_m) .* exp(1i * ph_m(ok_m))));
+                    if any(ok_m)
+                        miss_coh_map(ch,f) = sum(dv_m(ok_m) .* exp(1i * ph_m(ok_m)));
+                    end
 
                     amp_m = amp_ch(ph_miss_idx, f);
                     pup_m = pup_ch(ph_miss_idx);
@@ -1128,10 +1216,10 @@ for a = 1:nAnimals
         lbl = hm_labels{row};
 
         subplot(nDV, 2, (row-1)*2 + 1);
-        data = hit_coh.(lbl);
+        data = angle(hit_coh.(lbl));
         h_img = imagesc(freq, 1:a_nCh, data);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ);  caxis([-pi pi]);
+        colormap(gca, cmap_circ);  clim([-pi pi]);
         set(h_img, 'AlphaData', ~isnan(data));
         xlabel('Frequency (Hz)'); ylabel('Channel');
         title(coh_subtitles_hm{row}, 'FontSize', 9);
@@ -1145,7 +1233,7 @@ for a = 1:nAnimals
         data = hit_reg.(lbl);
         h_img = imagesc(freq, 1:a_nCh, data);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ);  caxis([-pi pi]);
+        colormap(gca, cmap_circ);  clim([-pi pi]);
         set(h_img, 'AlphaData', ~isnan(data));
         xlabel('Frequency (Hz)'); ylabel('Channel');
         title(reg_subtitles_hm{row}, 'FontSize', 9);
@@ -1161,14 +1249,8 @@ for a = 1:nAnimals
     cb.TickLabels = {'-\pi', '-\pi/2', '0', '\pi/2', '\pi'};
     cb.Position = [0.25 0.02 0.5 0.015];
     cb.Label.String = 'Preferred Phase (rad)';
-    sgtitle(sprintf('Preferred Phase — Hit Trials Only (%s)', animalName), ...
+    sgtitle(sprintf('Hit Trials Only (%s)', animalName), ...
         'FontSize', 14, 'FontWeight', 'bold');
-    annotation(fh, 'textbox', [0.01 0.93 0.98 0.04], 'String', ...
-        ['MUA/LFP/RT: coherence = DV-weighted mean phase, regression = full model '...
-        '(DV ~ pup + MUA_{bl} + amp + sin + cos) \phi_{pref} = atan2(\beta_{sin},\beta_{cos}). ' ...
-        'Hit/Miss: both columns show circular mean phase angle(mean(e^{i\theta}))'], ...
-        'EdgeColor', 'none', 'FontSize', 6, 'FitBoxToText', 'off', ...
-        'HorizontalAlignment', 'center', 'Interpreter', 'tex');
     print(fh, fullfile(a_save_root, 'preferred_phase_hit_only.pdf'), '-dpdf');
     fprintf('Hit-only figure for %s saved.\n', animalName);
 
@@ -1181,10 +1263,10 @@ for a = 1:nAnimals
         lbl = hm_labels{row};
 
         subplot(nDV, 2, (row-1)*2 + 1);
-        data = miss_coh.(lbl);
+        data = angle(miss_coh.(lbl));
         h_img = imagesc(freq, 1:a_nCh, data);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ);  caxis([-pi pi]);
+        colormap(gca, cmap_circ);  clim([-pi pi]);
         set(h_img, 'AlphaData', ~isnan(data));
         xlabel('Frequency (Hz)'); ylabel('Channel');
         title(coh_subtitles_hm{row}, 'FontSize', 9);
@@ -1198,7 +1280,7 @@ for a = 1:nAnimals
         data = miss_reg.(lbl);
         h_img = imagesc(freq, 1:a_nCh, data);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ);  caxis([-pi pi]);
+        colormap(gca, cmap_circ);  clim([-pi pi]);
         set(h_img, 'AlphaData', ~isnan(data));
         xlabel('Frequency (Hz)'); ylabel('Channel');
         title(reg_subtitles_hm{row}, 'FontSize', 9);
@@ -1214,20 +1296,14 @@ for a = 1:nAnimals
     cb.TickLabels = {'-\pi', '-\pi/2', '0', '\pi/2', '\pi'};
     cb.Position = [0.25 0.02 0.5 0.015];
     cb.Label.String = 'Preferred Phase (rad)';
-    sgtitle(sprintf('Preferred Phase — Miss Trials Only (%s)', animalName), ...
+    sgtitle(sprintf('Miss Trials Only (%s)', animalName), ...
         'FontSize', 14, 'FontWeight', 'bold');
-    annotation(fm, 'textbox', [0.01 0.93 0.98 0.04], 'String', ...
-        ['MUA/LFP/RT: coherence = DV-weighted mean phase, regression = full model '...
-        '(DV ~ pup + MUA_{bl} + amp + sin + cos) \phi_{pref} = atan2(\beta_{sin},\beta_{cos}). ' ...
-        'Hit/Miss: both columns show circular mean phase angle(mean(e^{i\theta}))'], ...
-        'EdgeColor', 'none', 'FontSize', 6, 'FitBoxToText', 'off', ...
-        'HorizontalAlignment', 'center', 'Interpreter', 'tex');
     print(fm, fullfile(a_save_root, 'preferred_phase_miss_only.pdf'), '-dpdf');
     fprintf('Miss-only figure for %s saved.\n', animalName);
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% FIGURE 6 — Monkey-Average Hit-Only Preferred Phase
+%% FIGURE 5 — Monkey-Average Hit-Only Preferred Phase
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Same layout as Figure 4 but computed from hit trials only.
 % Each animal's contribution is the circular mean across all channels.
@@ -1240,24 +1316,26 @@ set(f_hit_avg, 'PaperUnits', 'centimeters', 'PaperSize', [36 40], ...
 for row = 1:nDV
     lbl = hm_labels{row};
 
-    % Coherence column
+    % Coherence column — complex channel average, then complex animal average
     subplot(nDV, 2, (row-1)*2 + 1);
     phase_stack = NaN(3, nFreq);
+    cplx_stack  = complex(NaN(nAnimals, nFreq));
     for a = 1:nAnimals
-        ph  = animal_hit_coh_phase{a}.(lbl);
-        avg = NaN(1, size(ph,2));
-        for f = 1:size(ph,2)
-            v = ~isnan(ph(:,f));
-            if any(v), avg(f) = angle(mean(exp(1i * ph(v,f)))); end
+        ph_cplx = animal_hit_coh_phase{a}.(lbl);   % complex [nCh x nFreq_a]
+        avg_cplx = complex(NaN(1, size(ph_cplx, 2)));
+        for f = 1:size(ph_cplx, 2)
+            valid = ~isnan(ph_cplx(:,f));
+            if any(valid), avg_cplx(f) = mean(ph_cplx(valid, f)); end
         end
-        nF = min(length(avg), nFreq);
-        phase_stack(a, 1:nF) = avg(1:nF);
+        nF = min(length(avg_cplx), nFreq);
+        phase_stack(a, 1:nF) = angle(avg_cplx(1:nF));
+        cplx_stack(a,  1:nF) = avg_cplx(1:nF);
     end
-    phase_stack(3,:) = angle(mean(exp(1i * phase_stack(1:nAnimals,:)), 1, 'omitnan'));
+    phase_stack(3,:) = angle(mean(cplx_stack, 1, 'omitnan'));
 
     h_img = imagesc(freq, 1:3, phase_stack);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  caxis([-pi pi]);
+    colormap(gca, cmap_circ);  clim([-pi pi]);
     set(h_img, 'AlphaData', ~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -1285,7 +1363,7 @@ for row = 1:nDV
 
     h_img = imagesc(freq, 1:3, phase_stack);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  caxis([-pi pi]);
+    colormap(gca, cmap_circ);  clim([-pi pi]);
     set(h_img, 'AlphaData', ~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -1302,19 +1380,13 @@ cb.Ticks      = [-pi -pi/2 0 pi/2 pi];
 cb.TickLabels = {'-\pi', '-\pi/2', '0', '\pi/2', '\pi'};
 cb.Position   = [0.25 0.02 0.5 0.015];
 cb.Label.String = 'Preferred Phase (rad)';
-sgtitle('Monkey-Average Preferred Phase — Hit Trials Only', ...
+sgtitle('Hit Trials Only', ...
     'FontSize', 14, 'FontWeight', 'bold');
-annotation(f_hit_avg, 'textbox', [0.01 0.93 0.98 0.04], 'String', ...
-    ['MUA/LFP/RT: coherence = DV-weighted mean phase, regression = full model '...
-    '(DV ~ pup + MUA_{bl} + amp + sin + cos) \phi_{pref} = atan2(\beta_{sin},\beta_{cos}). ' ...
-    'Hit/Miss: both columns show circular mean phase angle(mean(e^{i\theta}))'],...
-    'EdgeColor', 'none', 'FontSize', 6, 'FitBoxToText', 'off', ...
-    'HorizontalAlignment', 'center', 'Interpreter', 'tex');
 print(f_hit_avg, fullfile(monkey_save_root, 'monkey_avg_preferred_phase_hit_only.pdf'), '-dpdf');
 fprintf('Monkey-average hit-only figure saved.\n');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% FIGURE 7 — Monkey-Average Miss-Only Preferred Phase
+%% FIGURE 6 — Monkey-Average Miss-Only Preferred Phase
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 f_miss_avg = figure('Name', 'Monkey-Avg Miss-Only Phase', ...
@@ -1325,24 +1397,26 @@ set(f_miss_avg, 'PaperUnits', 'centimeters', 'PaperSize', [36 40], ...
 for row = 1:nDV
     lbl = hm_labels{row};
 
-    % Coherence column
+    % Coherence column — complex channel average, then complex animal average
     subplot(nDV, 2, (row-1)*2 + 1);
     phase_stack = NaN(3, nFreq);
+    cplx_stack  = complex(NaN(nAnimals, nFreq));
     for a = 1:nAnimals
-        ph  = animal_miss_coh_phase{a}.(lbl);
-        avg = NaN(1, size(ph,2));
-        for f = 1:size(ph,2)
-            v = ~isnan(ph(:,f));
-            if any(v), avg(f) = angle(mean(exp(1i * ph(v,f)))); end
+        ph_cplx = animal_miss_coh_phase{a}.(lbl);   % complex [nCh x nFreq_a]
+        avg_cplx = complex(NaN(1, size(ph_cplx, 2)));
+        for f = 1:size(ph_cplx, 2)
+            valid = ~isnan(ph_cplx(:,f));
+            if any(valid), avg_cplx(f) = mean(ph_cplx(valid, f)); end
         end
-        nF = min(length(avg), nFreq);
-        phase_stack(a, 1:nF) = avg(1:nF);
+        nF = min(length(avg_cplx), nFreq);
+        phase_stack(a, 1:nF) = angle(avg_cplx(1:nF));
+        cplx_stack(a,  1:nF) = avg_cplx(1:nF);
     end
-    phase_stack(3,:) = angle(mean(exp(1i * phase_stack(1:nAnimals,:)), 1, 'omitnan'));
+    phase_stack(3,:) = angle(mean(cplx_stack, 1, 'omitnan'));
 
     h_img = imagesc(freq, 1:3, phase_stack);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  caxis([-pi pi]);
+    colormap(gca, cmap_circ);  clim([-pi pi]);
     set(h_img, 'AlphaData', ~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -1370,7 +1444,7 @@ for row = 1:nDV
 
     h_img = imagesc(freq, 1:3, phase_stack);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  caxis([-pi pi]);
+    colormap(gca, cmap_circ);  clim([-pi pi]);
     set(h_img, 'AlphaData', ~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -1387,13 +1461,7 @@ cb.Ticks      = [-pi -pi/2 0 pi/2 pi];
 cb.TickLabels = {'-\pi', '-\pi/2', '0', '\pi/2', '\pi'};
 cb.Position   = [0.25 0.02 0.5 0.015];
 cb.Label.String = 'Preferred Phase (rad)';
-sgtitle('Monkey-Average Preferred Phase — Miss Trials Only', ...
+sgtitle('Miss Trials Only', ...
     'FontSize', 14, 'FontWeight', 'bold');
-annotation(f_miss_avg, 'textbox', [0.01 0.93 0.98 0.04], 'String', ...
-    ['MUA/LFP/RT: coherence = DV-weighted mean phase, regression = full model '...
-    '(DV ~ pup + MUA_{bl} + amp + sin + cos) \phi_{pref} = atan2(\beta_{sin},\beta_{cos}). ' ...
-    'Hit/Miss: both columns show circular mean phase angle(mean(e^{i\theta}))'], ...
-    'EdgeColor', 'none', 'FontSize', 6, 'FitBoxToText', 'off', ...
-    'HorizontalAlignment', 'center', 'Interpreter', 'tex');
 print(f_miss_avg, fullfile(monkey_save_root, 'monkey_avg_preferred_phase_miss_only.pdf'), '-dpdf');
 fprintf('Monkey-average miss-only figure saved.\n');

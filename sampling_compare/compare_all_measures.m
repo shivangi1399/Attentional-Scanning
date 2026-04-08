@@ -64,8 +64,8 @@ if isempty(coh_all)
     return
 end
 
-avg_val   = mean(coh_all, 1);
-perm_avg  = mean(perm_all, 3);
+avg_val   = abs(mean(coh_all, 1));     % abs is no-op for real, collapses complex correctly
+perm_avg  = abs(mean(perm_all, 3));    % average complex perms across channels, then magnitude
 tmax      = max(perm_avg, [], 2);
 avg_thr   = quantile(tmax, 0.95);
 all_vals  = coh_all;
@@ -91,9 +91,9 @@ for ch = 1:nCh
 
     if any(isnan(val)) || any(isnan(prm(:))), continue; end
 
-    tmax = max(prm, [], 2);
+    tmax = max(abs(prm), [], 2);        % abs is no-op for real, collapses complex correctly
     thr  = quantile(tmax, 0.95);
-    sig_map(ch,:) = val >= thr;
+    sig_map(ch,:) = abs(val) >= thr;
 end
 end
 
@@ -127,20 +127,20 @@ end
 fprintf('Loading coherence data for %s...\n', animal);
 
 [coh_mua, thr_coh_mua, n_coh_mua] = load_coh_avg(...
-    fullfile(coh_root, 'mua'), 'coherence.mat', 'coh', ...
-    'coh_perm.mat', 'coh_perm', nCh, 'all_loc_difflev');
+    fullfile(coh_root, 'mua'), 'coherence.mat', 'coh_complex', ...
+    'coh_perm_complex.mat', 'coh_perm_complex', nCh, 'all_loc_difflev');
 
 [coh_lfp, thr_coh_lfp, n_coh_lfp] = load_coh_avg(...
-    fullfile(coh_root, 'lfp'), 'coherence.mat', 'coh', ...
-    'coh_perm.mat', 'coh_perm', nCh, 'all_loc_difflev');
+    fullfile(coh_root, 'lfp'), 'coherence.mat', 'coh_complex', ...
+    'coh_perm_complex.mat', 'coh_perm_complex', nCh, 'all_loc_difflev');
 
 [coh_rt, thr_coh_rt, n_coh_rt] = load_coh_avg(...
-    fullfile(coh_root, 'RT'), 'coherence.mat', 'coh', ...
-    'coh_perm.mat', 'coh_perm', nCh, 'all_loc_difflev');
+    fullfile(coh_root, 'RT'), 'coherence.mat', 'coh_complex', ...
+    'coh_perm_complex.mat', 'coh_perm_complex', nCh, 'all_loc_difflev');
 
 [coh_hm, thr_coh_hm, n_coh_hm] = load_coh_avg(...
-    fullfile(corr_root, 'hit_miss'), 'itc.mat', 'itc', ...
-    'itc_perm.mat', 'itc_perm', nCh, 'all_loc_difflev');
+    fullfile(corr_root, 'hit_miss'), 'itc.mat', 'itc_complex', ...
+    'itc_perm.mat', 'itc_perm_complex', nCh, 'all_loc_difflev');
 
 fprintf('Loading correlation data for %s...\n', animal);
 
@@ -293,10 +293,10 @@ fprintf('Building significance heatmaps...\n');
 nFreq = numel(freq);
 
 % Coherence heatmaps
-sig_coh_mua = build_sig_map(fullfile(coh_root,'mua'), 'coherence.mat','coh', 'coh_perm.mat','coh_perm', nCh, 'all_loc_difflev', nFreq);
-sig_coh_lfp = build_sig_map(fullfile(coh_root,'lfp'), 'coherence.mat','coh', 'coh_perm.mat','coh_perm', nCh, 'all_loc_difflev', nFreq);
-sig_coh_rt  = build_sig_map(fullfile(coh_root,'RT'),  'coherence.mat','coh', 'coh_perm.mat','coh_perm', nCh, 'all_loc_difflev', nFreq);
-sig_coh_hm  = build_sig_map(fullfile(corr_root,'hit_miss'), 'itc.mat','itc', 'itc_perm.mat','itc_perm', nCh, 'all_loc_difflev', nFreq);
+sig_coh_mua = build_sig_map(fullfile(coh_root,'mua'), 'coherence.mat','coh_complex', 'coh_perm_complex.mat','coh_perm_complex', nCh, 'all_loc_difflev', nFreq);
+sig_coh_lfp = build_sig_map(fullfile(coh_root,'lfp'), 'coherence.mat','coh_complex', 'coh_perm_complex.mat','coh_perm_complex', nCh, 'all_loc_difflev', nFreq);
+sig_coh_rt  = build_sig_map(fullfile(coh_root,'RT'),  'coherence.mat','coh_complex', 'coh_perm_complex.mat','coh_perm_complex', nCh, 'all_loc_difflev', nFreq);
+sig_coh_hm  = build_sig_map(fullfile(corr_root,'hit_miss'), 'itc.mat','itc_complex', 'itc_perm.mat','itc_perm_complex', nCh, 'all_loc_difflev', nFreq);
 
 % Correlation heatmaps
 sig_corr_mua = build_sig_map(fullfile(corr_root,'mua'), 'correlation.mat','correlation', 'corr_perm.mat','corr_perm', nCh, 'all_loc_difflev', nFreq);

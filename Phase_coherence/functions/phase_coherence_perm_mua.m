@@ -1,4 +1,4 @@
-function coh_perm = phase_coherence_perm_mua(cfg_fun)
+function phase_coherence_perm_mua(cfg_fun)
 % phase_coherence_permutation computes coherence under shuffled ERP amplitudes
 
 ichan = cfg_fun.ichan;
@@ -13,17 +13,14 @@ phase = ph_comb.phase_all(trial_idx,:,ichan);    % [trials × freq]
 erp_amp = ph_comb.MUA_ERP_ampl_all(trial_idx,ichan); % [trials × 1]
 
 nFreq = size(phase, 2);
-coh_perm = nan(permut_n, nFreq);
-phase_spec_perm = nan(permut_n, nFreq);
+coh_perm_complex = nan(permut_n, nFreq);  % complex: magnitude + phase preserved
 
 for perm = 1:permut_n
-    erp_perm = erp_amp(perm_indices{perm}); 
-    
+    erp_perm = erp_amp(perm_indices{perm});
+
     for foi = 1:nFreq
         vec = exp(1i * phase(:,foi)) .* erp_perm(:);
-        cavg = mean(vec);
-        coh_perm(perm,foi) = abs(cavg);
-        phase_spec_perm(perm,foi) = angle(cavg);
+        coh_perm_complex(perm,foi) = mean(vec);
     end
 end
 
@@ -33,7 +30,6 @@ if ~exist(num2str(ichan), 'dir')
 end
 cd(num2str(ichan))
 
-ESIsave coh_perm coh_perm
-ESIsave phase_spec_perm phase_spec_perm
+ESIsave coh_perm_complex coh_perm_complex
 ESIsave perm_indices perm_indices
 end
