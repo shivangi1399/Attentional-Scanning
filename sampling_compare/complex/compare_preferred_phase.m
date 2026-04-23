@@ -1156,7 +1156,7 @@ for a = 1:nAnimals
                     if sum(ok_reg) >= 6
                         X_h = [ones(sum(ok_reg),1), pup_h(ok_reg), mua_h(ok_reg), ...
                             amp_h(ok_reg), sin(ph_h(ok_reg)), cos(ph_h(ok_reg))];
-                        b_h = regress(dv_h(ok_reg), X_h);
+                        b_h = regress(dv_k_reg), X_h);
                         hit_reg_map(ch,f) = atan2(b_h(end-1), b_h(end));
                     end
                 end

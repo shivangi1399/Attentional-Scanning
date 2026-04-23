@@ -27,8 +27,10 @@ Y_vars = {'RT','MUA_ERP_ampl_all','LFP_ERP_ampl_all','hit_miss'};
 
 %% Load data
 
-info_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/cp10_till_100';
-cd(info_folder)
+data_folder    = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/cp10_till_100';
+results_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/complex/cp10_till_100';
+if ~exist(results_folder,'dir'), mkdir(results_folder); end
+cd(data_folder)
 load('ph_all_sess.mat') % loads ph_comb
 
 ph_all  = ph_comb.phase_all; % trials x freqs x channels
@@ -235,7 +237,7 @@ for d = 1:length(Y_vars)
             % pass a vector of permutation indices
             cfg_array{j}.perm_idx = perm_start:perm_end;
             
-            cfg_array{j}.output_dir = fullfile(info_folder, 'perm', depVarName, num2str(ch));
+            cfg_array{j}.output_dir = fullfile(results_folder, 'perm', depVarName, num2str(ch));
         end
         
         slurmfun(@regress_perm, cfg_array, ...
@@ -254,7 +256,7 @@ for d = 1:length(Y_vars)
     null_max_any      = zeros(nPerms, 1);
     
     % Load results from each permutation
-    output_dir = fullfile(info_folder, 'perm', depVarName, num2str(ch));
+    output_dir = fullfile(results_folder, 'perm', depVarName, num2str(ch));
     for p = 1:nPerms
         perm_file = fullfile(output_dir, sprintf('perm_%04d.mat', p));
         if exist(perm_file, 'file')
@@ -323,5 +325,5 @@ for d = 1:length(Y_vars)
 end
 
 % Save results
-cd(info_folder)
+cd(results_folder)
 save('multi_regression_perm_maxstat.mat','reg_results','-v7.3')

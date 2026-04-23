@@ -26,7 +26,7 @@ for a = 1:numel(animals)
     fprintf('\n=== Processing %s ===\n', animalName);
 
     data_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'multi_lin_reg', 'cp10_till_100');
-    corr_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_correlation', 'cp10_till_100');
+    corr_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_correlation', 'complex', 'cp10_till_100');
 
     %% =====================================================================
     %  SECTION A: Phase vs RT correlation (all locations and difficulty levels)
@@ -184,7 +184,7 @@ for a = 1:numel(animals)
     %  PLOTTING — Phase vs RT correlation (per animal)
     %  =====================================================================
 
-    save_root_RT = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation', animalName, 'cp10_till_100', 'RT', 'all_loc_difflev');
+    save_root_RT = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_correlation/complex', animalName, 'cp10_till_100', 'RT', 'all_loc_difflev');
     if ~exist(save_root_RT, 'dir'), mkdir(save_root_RT); end
 
     cd(corr_folder)
@@ -306,7 +306,7 @@ for a = 1:numel(animals)
     %  PLOTTING — Phase vs Hit/Miss (POS) (per animal)
     %  =====================================================================
 
-    save_root_HM = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation', animalName, 'cp10_till_100', 'hit_miss', 'all_loc_difflev');
+    save_root_HM = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_correlation/complex', animalName, 'cp10_till_100', 'hit_miss', 'all_loc_difflev');
     if ~exist(save_root_HM, 'dir'), mkdir(save_root_HM); end
 
     limit_max_pos = nan(1, nCh);
@@ -418,7 +418,7 @@ for a = 1:numel(animals)
     %  PLOTTING — Phase vs Hit/Miss (ITC) (per animal)
     %  =====================================================================
 
-    save_root_ITC = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation', animalName, 'cp10_till_100', 'hit_miss_itc', 'all_loc_difflev');
+    save_root_ITC = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_correlation/complex', animalName, 'cp10_till_100', 'hit_miss_itc', 'all_loc_difflev');
     if ~exist(save_root_ITC, 'dir'), mkdir(save_root_ITC); end
 
     limit_max_itc = nan(1, nCh);
@@ -549,7 +549,7 @@ perm_monkey = [];
 
 for a = 1:nAnimals
     animal_corr = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
-        ['results_' animals{a}], 'phase_correlation', 'cp10_till_100');
+        ['results_' animals{a}], 'phase_correlation', 'complex', 'cp10_till_100');
     avg_file = fullfile(animal_corr, 'RT', 'all_loc_difflev', 'channel_avg_results.mat');
 
     if ~isfile(avg_file)
@@ -571,7 +571,7 @@ if size(corr_monkey, 1) == nAnimals
     tmax_monkey_avg = max(perm_monkey_avg, [], 2);
     thresh_monkey_avg = quantile(tmax_monkey_avg, 0.95);
 
-    monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_correlation/cp10_till_100', 'RT', 'all_loc_difflev');
+    monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_correlation/complex/cp10_till_100', 'RT', 'all_loc_difflev');
     if ~exist(monkey_save_dir, 'dir'), mkdir(monkey_save_dir); end
     save(fullfile(monkey_save_dir, 'monkey_avg_results.mat'), ...
         'corr_monkey_avg', 'perm_monkey_avg', 'tmax_monkey_avg', ...
@@ -579,7 +579,7 @@ if size(corr_monkey, 1) == nAnimals
 
     fprintf('RT Correlation Monkey-average threshold: %.4f\n', thresh_monkey_avg);
 
-    monkey_plot_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/monkey_avg/cp10_till_100/RT/all_loc_difflev');
+    monkey_plot_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_correlation/complex/monkey_avg/cp10_till_100/RT/all_loc_difflev');
     if ~exist(monkey_plot_dir, 'dir'), mkdir(monkey_plot_dir); end
 
     figure;
@@ -619,7 +619,7 @@ perm_monkey_pos = [];
 
 for a = 1:nAnimals
     animal_corr = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
-        ['results_' animals{a}], 'phase_correlation', 'cp10_till_100');
+        ['results_' animals{a}], 'phase_correlation', 'complex', 'cp10_till_100');
     avg_file = fullfile(animal_corr, 'hit_miss', 'all_loc_difflev', 'channel_avg_results_pos.mat');
 
     if ~isfile(avg_file)
@@ -641,7 +641,7 @@ if size(pos_monkey, 1) == nAnimals
     tmax_monkey_avg_pos = max(perm_monkey_avg_pos, [], 2);
     thresh_monkey_avg_pos = quantile(tmax_monkey_avg_pos, 0.95);
 
-    monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_correlation/cp10_till_100', 'hit_miss', 'all_loc_difflev');
+    monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_correlation/complex/cp10_till_100', 'hit_miss', 'all_loc_difflev');
     if ~exist(monkey_save_dir, 'dir'), mkdir(monkey_save_dir); end
     save(fullfile(monkey_save_dir, 'monkey_avg_results_pos.mat'), ...
         'pos_monkey_avg', 'perm_monkey_avg_pos', 'tmax_monkey_avg_pos', ...
@@ -649,7 +649,7 @@ if size(pos_monkey, 1) == nAnimals
 
     fprintf('POS Monkey-average threshold: %.4f\n', thresh_monkey_avg_pos);
 
-    monkey_plot_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/monkey_avg/cp10_till_100/hit_miss/all_loc_difflev');
+    monkey_plot_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_correlation/complex/monkey_avg/cp10_till_100/hit_miss/all_loc_difflev');
     if ~exist(monkey_plot_dir, 'dir'), mkdir(monkey_plot_dir); end
 
     figure;
@@ -688,7 +688,7 @@ perm_complex_monkey_itc = [];
 
 for a = 1:nAnimals
     animal_corr = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
-        ['results_' animals{a}], 'phase_correlation', 'cp10_till_100');
+        ['results_' animals{a}], 'phase_correlation', 'complex', 'cp10_till_100');
     avg_file = fullfile(animal_corr, 'hit_miss', 'all_loc_difflev', 'channel_avg_results_itc.mat');
 
     if ~isfile(avg_file)
@@ -714,7 +714,7 @@ if size(itc_complex_monkey, 1) == nAnimals
     tmax_monkey_avg_itc   = max(perm_monkey_avg_itc, [], 2);
     thresh_monkey_avg_itc = quantile(tmax_monkey_avg_itc, 0.95);
 
-    monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_correlation/cp10_till_100', 'hit_miss_itc', 'all_loc_difflev');
+    monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_correlation/complex/cp10_till_100', 'hit_miss_itc', 'all_loc_difflev');
     if ~exist(monkey_save_dir, 'dir'), mkdir(monkey_save_dir); end
     save(fullfile(monkey_save_dir, 'monkey_avg_results_itc.mat'), ...
         'itc_complex_monkey_avg', 'itc_monkey_avg', 'phase_monkey_avg_itc', ...
@@ -723,7 +723,7 @@ if size(itc_complex_monkey, 1) == nAnimals
 
     fprintf('ITC Monkey-average threshold: %.4f\n', thresh_monkey_avg_itc);
 
-    monkey_plot_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/correlation/monkey_avg/cp10_till_100/hit_miss_itc/all_loc_difflev');
+    monkey_plot_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_correlation/complex/monkey_avg/cp10_till_100/hit_miss_itc/all_loc_difflev');
     if ~exist(monkey_plot_dir, 'dir'), mkdir(monkey_plot_dir); end
 
     figure;

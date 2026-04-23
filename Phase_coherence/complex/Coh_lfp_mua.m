@@ -41,7 +41,7 @@ for a = 1:numel(animals)
     session_paths_files = cellfun(@(x) fullfile(datafolder,x, 'clean_lfp.mat'), session_names, 'uniform',0);
 
     phase_paths = cellfun(@(x) fullfile(datafolder, x,'Phase_analysis/hit_miss'),session_names, 'uniform',0);
-    output_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_coherence', 'cp10_till_100');
+    output_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_coherence', 'complex', 'cp10_till_100');
 
     for s = 1:numel(signal_types)
         sig = signal_types{s};
@@ -161,7 +161,7 @@ for s = 1:numel(signal_types)
 
     for a = 1:nAnimals
         animal_output = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
-            ['results_' animals{a}], 'phase_coherence', 'cp10_till_100');
+            ['results_' animals{a}], 'phase_coherence', 'complex', 'cp10_till_100');
         avg_file = fullfile(animal_output, sig, 'all_loc_difflev', 'channel_avg_results.mat');
 
         if ~isfile(avg_file)
@@ -189,7 +189,7 @@ for s = 1:numel(signal_types)
         tmax_monkey_avg   = max(perm_monkey_avg, [], 2);
         thresh_monkey_avg = quantile(tmax_monkey_avg, 0.95);
 
-        monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_coherence/cp10_till_100', sig, 'all_loc_difflev');
+        monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/phase_coherence/complex/cp10_till_100', sig, 'all_loc_difflev');
         if ~exist(monkey_save_dir, 'dir'), mkdir(monkey_save_dir); end
         save(fullfile(monkey_save_dir, 'monkey_avg_results.mat'), ...
             'coh_monkey_avg', 'coh_complex_monkey_avg', 'phase_monkey_avg', ...
@@ -198,7 +198,7 @@ for s = 1:numel(signal_types)
 
         fprintf('%s Monkey-average threshold: %.4f\n', upper(sig), thresh_monkey_avg);
 
-        monkey_plot_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_coherence/monkey_avg/cp10_till_100', sig, 'all_loc_difflev');
+        monkey_plot_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_coherence/complex/monkey_avg/cp10_till_100', sig, 'all_loc_difflev');
         if ~exist(monkey_plot_dir, 'dir'), mkdir(monkey_plot_dir); end
 
         figure;

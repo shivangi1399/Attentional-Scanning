@@ -33,9 +33,12 @@ for a = 1:numel(animals)
     fprintf('\n=== Processing %s ===\n', animalName);
 
     %% Load data
-    info_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
+    data_folder    = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
         ['results_' animalName], 'multi_lin_reg', 'cp10_till_100');
-    cd(info_folder)
+    results_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
+        ['results_' animalName], 'multi_lin_reg', 'complex', 'cp10_till_100');
+    if ~exist(results_folder,'dir'), mkdir(results_folder); end
+    cd(data_folder)
     load('ph_all_sess.mat') % loads ph_comb
 
     ph_all  = ph_comb.phase_all; % trials x freqs x channels
@@ -210,7 +213,7 @@ for a = 1:numel(animals)
             %% Permutation testing: SLURM call
             nJobs = ceil(nPerm/10);
             cfg_array = cell(nJobs,1);
-            output_dir = fullfile(info_folder,'perm_R',depVarName,num2str(ch));
+            output_dir = fullfile(results_folder,'perm_R',depVarName,num2str(ch));
 
             for j = 1:nJobs
                 perm_start = (j-1)*10 + 1;
@@ -294,7 +297,7 @@ for a = 1:numel(animals)
 
             % Load each channel's permutation result
             for ch = 1:numCh
-                perm_file = fullfile(info_folder,'perm_R',depVarName,num2str(ch),...
+                perm_file = fullfile(results_folder,'perm_R',depVarName,num2str(ch),...
                     sprintf('perm_%04d.mat',perm));
                 if ~isfile(perm_file)
                     continue;
@@ -344,7 +347,7 @@ for a = 1:numel(animals)
         reg_results.(depVarName).channel_avg_R.any      = mean(reg_results.(depVarName).R2_any,1,'omitnan');
 
         % Save channel-average results for cross-animal analysis
-        chan_avg_save_dir = fullfile(info_folder, 'perm_R', depVarName);
+        chan_avg_save_dir = fullfile(results_folder, 'perm_R', depVarName);
         if ~exist(chan_avg_save_dir, 'dir'), mkdir(chan_avg_save_dir); end
         obs_avg = reg_results.(depVarName).channel_avg_R;
         save(fullfile(chan_avg_save_dir, 'channel_avg_results.mat'), ...
@@ -355,7 +358,7 @@ for a = 1:numel(animals)
     end
 
     % Save per-animal results
-    cd(info_folder)
+    cd(results_folder)
     save('multi_regression_channelwise_R2.mat','reg_results','-v7.3');
     fprintf('Saved per-animal results for %s.\n', animalName);
 
@@ -379,7 +382,7 @@ for d = 1:length(Y_vars)
 
     for a = 1:nAnimals
         animal_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
-            ['results_' animals{a}], 'multi_lin_reg', 'cp10_till_100');
+            ['results_' animals{a}], 'multi_lin_reg', 'complex', 'cp10_till_100');
         avg_file = fullfile(animal_folder, 'perm_R', depVarName, 'channel_avg_results.mat');
 
         if ~isfile(avg_file)
@@ -424,7 +427,7 @@ for d = 1:length(Y_vars)
     end
 
     % Save
-    monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/multi_lin_reg/cp10_till_100', depVarName);
+    monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/multi_lin_reg/complex/cp10_till_100', depVarName);
     if ~exist(monkey_save_dir, 'dir'), mkdir(monkey_save_dir); end
     save(fullfile(monkey_save_dir, 'monkey_avg_results.mat'), ...
         'monkey_avg_obs', 'tmax_monkey', 'thresh_monkey', 'p_monkey', ...

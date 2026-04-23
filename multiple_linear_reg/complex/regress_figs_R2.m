@@ -10,7 +10,7 @@ clc
 
 %% Load data
 
-info_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/multi_lin_reg/cp10_till_100';
+info_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/multi_lin_reg/complex/cp10_till_100';
 cd(info_folder)
 load('multi_regression_channelwise_R2.mat', 'reg_results');
 
@@ -509,7 +509,7 @@ figure('Name','Monkey-Average R²','Position',[50 50 1800 1000]);
 for d = 1:nDV
 
     depVarName = Y_vars{d};
-    monkey_file = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/multi_lin_reg/cp10_till_100', ...
+    monkey_file = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/multi_lin_reg/complex/cp10_till_100', ...
         depVarName, 'monkey_avg_results.mat');
 
     if ~isfile(monkey_file)
@@ -565,7 +565,7 @@ figure('Name','Per-Animal + Monkey-Average R²','Position',[50 50 1800 1000]);
 for d = 1:nDV
 
     depVarName = Y_vars{d};
-    monkey_file = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/multi_lin_reg/cp10_till_100', ...
+    monkey_file = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined/multi_lin_reg/complex/cp10_till_100', ...
         depVarName, 'monkey_avg_results.mat');
 
     if ~isfile(monkey_file)

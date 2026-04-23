@@ -9,9 +9,11 @@ clc
 
 %% Load data
 
-info_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/cp10_till_100';
-cd(info_folder)
+data_folder    = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/cp10_till_100';
+results_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/complex/cp10_till_100';
+cd(results_folder)
 load('multi_regression_perm_maxstat.mat', 'reg_results');
+cd(data_folder)
 load('ph_all_sess.mat') % loads ph_comb
 
 ph_all  = ph_comb.phase_all; % trials x freqs x channels
