@@ -164,7 +164,7 @@ reduce the effective number of independent observations entering the average.
 
 ---
 
-## H4 — Per-channel coherence (proposed)
+## H4 — Per-channel coherence
 
 **Motivation**
 
@@ -234,6 +234,74 @@ specific ones remain.
 
 ---
 
+## H1 + H4 — Per-channel coherence implementation (`abs_per_chan/`)
+
+This is the concrete implementation of H1 at the trial level combined with H4 at the
+channel level (described conceptually in the H4 section above). It is the H1+H4
+counterpart of `abs_per_pos/` (which implements H2+H4).
+
+**What it does**
+
+Within each channel, all trials are pooled in complex space (the H1 recipe at the trial
+level). The `abs()` is taken at the channel level before averaging across channels:
+
+    coh_complex_ch(f) = mean( DV .* exp(i * phase(f)) )   [over all trials, per channel]
+    coh_ch(f)         = abs( coh_complex_ch(f) )            [magnitude per channel]
+    coh_animal(f)     = mean( coh_ch(f) )                   [arithmetic mean over channels]
+    coh_monkey(f)     = mean( coh_animal(f) )               [arithmetic mean over animals]
+
+For the preferred phase, the complex value is preserved at the channel level and
+`angle()` is extracted; circular means are then taken across channels and animals:
+
+    phi_ch(f)     = angle( coh_complex_ch(f) )
+    phi_animal(f) = angle( mean( exp(i * phi_ch(f)) ) )      [circular mean over channels]
+    phi_monkey(f) = angle( mean( exp(i * phi_animal(f)) ) )  [circular mean over animals]
+
+The same recipe runs across all three pipelines:
+
+- `Phase_coherence/abs_per_chan/`   – complex coherence with `abs()` at channel level
+- `Correlation_analysis/abs_per_chan/` – `circ_corrcl()` per channel (returns a
+  non-negative magnitude — the abs at channel level is implicit in the function)
+- `multiple_linear_reg/abs_per_chan/` – per-channel regression on all trials;
+  `R²` is non-negative by construction (RSS ratio) and `R_phase = sqrt(β_sin² + β_cos²)`
+  is the explicit per-channel magnitude
+
+**The underlying hypothesis**
+
+"**There is a single optimal phase shared across all trials within each channel, but each
+channel may have its own preferred phase. The cross-channel and cross-animal averages
+are magnitude-only — they do not assume channels share a preferred phase.**"
+
+This relaxes H1's implicit assumption that channels within an animal have a common
+preferred phase. It does NOT relax H1's per-trial pooling: stimulus condition
+(position, difficulty) is still ignored at the trial level.
+
+**What a result means**
+
+- Significant `abs_per_chan` with non-significant `complex` (H1) → channels each have
+  a phase-DV relationship but their preferred phases do not align across the array.
+  The "single cortical sampling rhythm" interpretation of H1 is not supported.
+- Significant `complex` and significant `abs_per_chan` → channels share a preferred
+  phase AND each channel individually shows it. Strongest possible result.
+- Non-significant `abs_per_chan` → channels individually do not show phase-DV
+  coherence. Any apparent H1 effect must come from cross-channel pooling artefacts.
+
+**Comparison with `abs_per_pos`**
+
+| Aspect | `abs_per_pos` (H2+H4) | `abs_per_chan` (H1+H4) |
+|---|---|---|
+| Trial-level pooling | Per stimulus position | All trials together |
+| Where `abs()` is taken | Per position (within channel) | Per channel (after pooling all trials) |
+| What's relaxed vs H1 | Cross-position alignment AND cross-channel alignment | Cross-channel alignment only |
+| What's still assumed | Channels share preferred phase within position | Trials share preferred phase within channel |
+
+A future "H2 + H4" recipe (`abs_per_pos_chan/`) would take `abs()` per position, then
+again per channel — the most thoroughly stratified variant. The currently saved
+`abs_per_pos` outputs already collapse direction at the position level so they are
+operationally equivalent to H2+H4 at the channel level too.
+
+---
+
 ## Summary
 
 H1/H2/H3 form a nested hierarchy along the **trial** axis, progressively allowing the
@@ -262,11 +330,94 @@ diagnose *where* the preferred phase is stable vs. variable:
 
 ---
 
+## Testing phase consistency directly: Rayleigh and Hodges-Ajne tests
+
+The coherence significance tests described above are **magnitude** tests: they ask
+whether a phase-DV relationship exists at each level. They don't directly test
+whether the **preferred phases themselves** align across the items at a given level.
+
+At H1 this distinction doesn't matter: `|coh_complex|` is only large when phasors align,
+so the magnitude significance test already implicitly tests phase consistency. But at
+H2/H3/H4 the `abs()` collapse happens before aggregation, so cross-level phase
+consistency is no longer encoded in the saved magnitude — it has to be tested
+separately.
+
+### The general recipe
+
+For each (channel, frequency) — or (animal, frequency) at higher levels — the
+procedure is identical regardless of the level:
+
+1. Save the **vector of preferred phases** from the level below (e.g. one φ per
+   position for H2, one φ per (position × difficulty) cell for H3, one φ per channel
+   for H4).
+2. Compute the **circular mean direction** (the representative preferred phase):
+   `angle(mean(exp(1i * phi_vec)))`.
+3. Compute the **mean resultant length** `R = abs(mean(exp(1i * phi_vec)))` — this is
+   what Rayleigh's test statistic is based on.
+4. Run **Rayleigh's test** (`circ_rtest` in CircStat2012a) for a single preferred
+   direction, and/or **Hodges-Ajne's omnibus test** (`circ_otest`) for any departure
+   from uniformity.
+
+Steps 1–2 are already in the compare script; only 3–4 add new information.
+
+### Rayleigh vs Hodges-Ajne in one line
+
+- **Rayleigh**: powerful against a single cluster, **blind to antipodal bimodal
+  patterns** (two phase clusters π apart cancel in the mean resultant).
+- **Hodges-Ajne (omnibus)**: slightly less powerful against a single cluster, but
+  detects any departure from uniformity — including bimodal and multimodal. Rotates
+  a diameter across the circle and takes the minimum number of points on one side;
+  small minimum → non-uniform.
+
+Hodges-Ajne is the safer default when you don't have a strong prior that preferred
+phases should cluster around one direction. For cortical data where antiphase
+organisation across layers or columns is plausible, it's a useful insurance against
+Rayleigh-blind bimodal patterns.
+
+### Applying this at each level
+
+| Level | Input vector | Question answered | Test |
+|---|---|---|---|
+| H1 (within channel, pooled trials) | n/a — `|coh_complex|` already tests this | Do trials within a channel prefer a consistent phase? | Magnitude permutation (already implemented) |
+| H2 (per channel, across positions) | `{φ_p}` length = n_positions | Do positions within this channel share a preferred phase? | Rayleigh and/or Hodges-Ajne on `{φ_p}` |
+| H3 (per channel, across condition cells) | `{φ_(p,d)}` length = n_positions × n_difficulty | Do condition cells within this channel share a preferred phase? | Rayleigh and/or Hodges-Ajne on `{φ_(p,d)}` |
+| H4 (per animal, across channels) | `{φ_ch}` length = n_channels (≈64) | Do channels within this animal share a preferred phase (the "single cortical rhythm" claim)? | Rayleigh and/or Hodges-Ajne on `{φ_ch}` |
+| Across animals | `{φ_animal}` length = 2 | Do the two animals share a preferred phase? | Neither test has power at n=2 — descriptive only |
+
+Output shape at each level is the same as the existing coherence magnitude test: one
+p-value per (channel, frequency) for H2/H3, or per (animal, frequency) for H4. These
+can be overlaid on the existing preferred-phase heatmaps as an additional significance
+mask, orthogonal to the magnitude mask.
+
+### Interpretation pattern combining magnitude and phase tests
+
+For each (channel, frequency) bin at H2:
+
+| Magnitude test | Phase-consistency test | Interpretation |
+|---|---|---|
+| Significant | Significant | Phase-DV relationship AND preferred phases align across positions — strongest evidence for a stable per-channel preferred phase |
+| Significant | Not significant | Phase-DV relationship exists at the per-position level, but preferred phases vary across positions — per-channel mean direction is meaningless |
+| Not significant | Significant | No detectable per-position coherence, but what little signal exists points in a consistent direction — usually a low-power artifact |
+| Not significant | Not significant | No phase-DV relationship worth reporting at this channel/frequency |
+
+The same table applies at H3 (substitute "condition cells" for "positions") and H4
+(substitute "channels within animal" for "positions").
+
+### Implementation note
+
+`circ_rtest` and `circ_otest` are both in the CircStat2012a toolbox already on the
+addpath in the compare scripts, so integrating them is one extra call per (channel,
+frequency) loop. The Hodges-Ajne test requires no permutation and scales trivially
+with the number of items in the input vector.
+
+---
+
 ## File organisation
 
     sampling_compare/
       complex/                  H1 comparison script
-      abs_per_pos/              H2 comparison script
+      abs_per_pos/              H2 (H2+H4) comparison script
+      abs_per_chan/             H1+H4 comparison script
       README.md                 this file
 
 Per-analysis results:
@@ -274,19 +425,22 @@ Per-analysis results:
     results_{animal}/
       phase_coherence/complex/          H1 coherence
       phase_coherence/abs_per_pos/      H2 coherence
+      phase_coherence/abs_per_chan/     H1+H4 coherence
       phase_correlation/complex/        H1 correlation (ITC / circ-lin)
       phase_correlation/abs_per_pos/    H2 correlation
+      phase_correlation/abs_per_chan/   H1+H4 correlation
       multi_lin_reg/complex/            H1 regression
       multi_lin_reg/abs_per_pos/        H2 regression
+      multi_lin_reg/abs_per_chan/       H1+H4 regression
       multi_lin_reg/cp10_till_100/      shared input data (ph_all_sess.mat)
 
     results_combined/
-      phase_coherence/{complex,abs_per_pos}/         monkey-average coherence
-      phase_correlation/{complex,abs_per_pos}/       monkey-average correlation
-      multi_lin_reg/{complex,abs_per_pos}/           monkey-average regression
+      phase_coherence/{complex,abs_per_pos,abs_per_chan}/         monkey-average coherence
+      phase_correlation/{complex,abs_per_pos,abs_per_chan}/       monkey-average correlation
+      multi_lin_reg/{complex,abs_per_pos,abs_per_chan}/           monkey-average regression
 
     Plots/
-      phase_coherence/{complex,abs_per_pos}/{hermes,klecks,monkey_avg}/
-      phase_correlation/{complex,abs_per_pos}/{hermes,klecks,monkey_avg}/
-      multi_lin_reg/{complex,abs_per_pos}/{hermes,klecks,monkey_avg}/
+      phase_coherence/{complex,abs_per_pos,abs_per_chan}/{hermes,klecks,monkey_avg}/
+      phase_correlation/{complex,abs_per_pos,abs_per_chan}/{hermes,klecks,monkey_avg}/
+      multi_lin_reg/{complex,abs_per_pos,abs_per_chan}/{hermes,klecks,monkey_avg}/
       sampling_compare/                 preferred phase comparison figures

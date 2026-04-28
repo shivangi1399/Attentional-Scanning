@@ -68,14 +68,17 @@ data_load_folder = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');
 tmp_ph = load(fullfile(data_load_folder, 'ph_all_sess.mat'), 'ph_comb');
 a_ph   = tmp_ph.ph_comb;
 
-coh_phase    = struct();
-coh_measures = {'mua', 'lfp', 'RT', 'hit_miss'};
+coh_phase       = struct();
+coh_phase_omni  = struct();     % Hodges-Ajne p-values (H2: per channel, across positions)
+coh_measures    = {'mua', 'lfp', 'RT', 'hit_miss'};
+min_n_omni      = 4;             % minimum valid positions / cells / channels for Hodges-Ajne
 
 % --- MUA ---
 fprintf('  MUA...\n');
 positions_mua = unique(a_ph.MUA_ERP_trialinfo(:,16));
 nPos_mua      = numel(positions_mua);
 phase_map     = NaN(nCh, nFreq);
+omni_map      = NaN(nCh, nFreq);   % H2 phase-consistency p-value (across positions)
 for ch = 1:nCh
     for f = 1:nFreq
         cplx_pos = NaN(nPos_mua, 1);
@@ -93,15 +96,20 @@ for ch = 1:nCh
         if any(valid_pos)
             phase_map(ch,f) = angle(mean(exp(1i * phi_pos(valid_pos))));
         end
+        if sum(valid_pos) >= min_n_omni
+            omni_map(ch,f) = circ_otest(phi_pos(valid_pos));
+        end
     end
 end
-coh_phase.mua = phase_map;
+coh_phase.mua       = phase_map;
+coh_phase_omni.mua  = omni_map;
 
 % --- LFP ---
 fprintf('  LFP...\n');
 positions_lfp = unique(a_ph.LFP_ERP_trialinfo(:,16));
 nPos_lfp      = numel(positions_lfp);
 phase_map     = NaN(nCh, nFreq);
+omni_map      = NaN(nCh, nFreq);
 for ch = 1:nCh
     for f = 1:nFreq
         cplx_pos = NaN(nPos_lfp, 1);
@@ -119,9 +127,13 @@ for ch = 1:nCh
         if any(valid_pos)
             phase_map(ch,f) = angle(mean(exp(1i * phi_pos(valid_pos))));
         end
+        if sum(valid_pos) >= min_n_omni
+            omni_map(ch,f) = circ_otest(phi_pos(valid_pos));
+        end
     end
 end
-coh_phase.lfp = phase_map;
+coh_phase.lfp       = phase_map;
+coh_phase_omni.lfp  = omni_map;
 
 % --- RT (hit trials only) ---
 fprintf('  RT...\n');
@@ -129,6 +141,7 @@ hit_idx_rt   = find(a_ph.RT_trialinfo(:,20) == 1);
 positions_rt = unique(a_ph.RT_trialinfo(hit_idx_rt, 16));
 nPos_rt      = numel(positions_rt);
 phase_map    = NaN(nCh, nFreq);
+omni_map     = NaN(nCh, nFreq);
 for ch = 1:nCh
     for f = 1:nFreq
         cplx_pos = NaN(nPos_rt, 1);
@@ -147,9 +160,13 @@ for ch = 1:nCh
         if any(valid_pos)
             phase_map(ch,f) = angle(mean(exp(1i * phi_pos(valid_pos))));
         end
+        if sum(valid_pos) >= min_n_omni
+            omni_map(ch,f) = circ_otest(phi_pos(valid_pos));
+        end
     end
 end
-coh_phase.RT = phase_map;
+coh_phase.RT      = phase_map;
+coh_phase_omni.RT = omni_map;
 
 % --- Hit/Miss: ITC with inverted miss phases, per position ---
 fprintf('  Hit/Miss...\n');
@@ -158,6 +175,7 @@ hit_labels   = (a_ph.trialinfo(all_idx_hm, 20) == 1);
 positions_hm = unique(a_ph.trialinfo(all_idx_hm, 16));
 nPos_hm      = numel(positions_hm);
 phase_map    = NaN(nCh, nFreq);
+omni_map     = NaN(nCh, nFreq);
 for ch = 1:nCh
     for f = 1:nFreq
         cplx_pos = NaN(nPos_hm, 1);
@@ -175,9 +193,35 @@ for ch = 1:nCh
         if any(valid_pos)
             phase_map(ch,f) = angle(mean(exp(1i * phi_pos(valid_pos))));
         end
+        if sum(valid_pos) >= min_n_omni
+            omni_map(ch,f) = circ_otest(phi_pos(valid_pos));
+        end
     end
 end
-coh_phase.hit_miss = phase_map;
+coh_phase.hit_miss      = phase_map;
+coh_phase_omni.hit_miss = omni_map;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% 3b. H4 PHASE CONSISTENCY ACROSS CHANNELS (within this animal)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Hodges-Ajne omnibus test on the set of per-channel preferred phases at
+% each frequency. Tests whether channels within this animal share a common
+% preferred direction ("single cortical sampling rhythm" claim).
+
+coh_phase_omni_ch = struct();
+for m = 1:length(coh_measures)
+    key      = coh_measures{m};
+    ph_all   = coh_phase.(key);
+    omni_vec = NaN(1, nFreq);
+    for f = 1:nFreq
+        v = ~isnan(ph_all(:,f));
+        if sum(v) >= min_n_omni
+            omni_vec(f) = circ_otest(ph_all(v,f));
+        end
+    end
+    coh_phase_omni_ch.(key) = omni_vec;
+end
+fprintf('H4 Hodges-Ajne across channels computed for %s.\n', animal);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% 4. LOAD REGRESSION PREFERRED PHASE
@@ -373,9 +417,85 @@ cb.Ticks = [-pi -pi/2 0 pi/2 pi];
 cb.TickLabels = {'-\pi', '-\pi/2', '0', '\pi/2', '\pi'};
 cb.Position = [0.25 0.02 0.5 0.015];
 cb.Label.String = 'Preferred Phase (rad)';
-sgtitle(sprintf('Preferred Phase — Abs-Per-Pos (%s)', animal), 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle(sprintf(['Preferred Phase — Abs-Per-Pos (%s)\n' ...
+    'Significance = COHERENCE MAGNITUDE (how big the per-position arrows are)'], animal), ...
+    'FontSize', 13, 'FontWeight', 'bold');
 print(f1, fullfile(save_root, 'preferred_phase_comparison.pdf'), '-dpdf');
 fprintf('Figure 1 saved.\n');
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% FIGURE 1b — Preferred Phase Heatmaps masked by OMNIBUS (direction) test
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Same heatmap as Figure 1, but transparency is driven by the Hodges-Ajne
+% omnibus test on the per-position preferred phases {phi_p} for each
+% (channel, frequency). This tests whether the DIRECTIONS of the
+% per-position arrows cluster around a common angle, regardless of how
+% large those arrows are. Complements Figure 1:
+%   Figure 1  → arrows LONG    (coherence magnitude)
+%   Figure 1b → arrows AGREE   (phase direction consistency)
+
+f1b = figure('Name', ['Preferred Phase Omnibus (Abs-Per-Pos) - ' animal], ...
+    'Units', 'centimeters', 'Position', [1 1 36 40]);
+set(f1b, 'PaperUnits', 'centimeters', 'PaperSize', [36 40], 'PaperPosition', [0 0 36 40]);
+
+omni_alpha_thresh = 0.05;
+
+for row = 1:nDVs
+    key = row_keys{row};
+
+    % --- Column 1: Coherence preferred phase masked by omnibus test ---
+    subplot(nDVs, 2, (row-1)*2 + 1);
+    data_coh = coh_phase.(key);
+    h_img    = imagesc(freq, 1:nCh, data_coh);
+    set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
+    colormap(gca, cmap_circ); clim([-pi pi]);
+
+    omni_map  = coh_phase_omni.(key);
+    sig_omni  = omni_map < omni_alpha_thresh;
+    alpha_coh = ones(nCh, nFreq) * nonsig_alpha;
+    alpha_coh(sig_omni) = 1;
+    set(h_img, 'AlphaData', alpha_coh);
+
+    xlabel('Frequency (Hz)'); ylabel('Channel');
+    title(coh_subtitles{row}, 'FontSize', 9);
+    set(gca, 'FontSize', 8, 'Box', 'on');
+    if row == 1
+        text(0.5, 1.22, 'Coherence (H2 per-pos)', 'Units', 'normalized', ...
+            'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
+    end
+
+    % --- Column 2: Regression preferred phase (no omnibus available — reuse existing mask) ---
+    subplot(nDVs, 2, (row-1)*2 + 2);
+    if has_reg
+        data_reg = reg_phase.(key);
+        nR = size(data_reg,1); nF = size(data_reg,2);
+        h_img2 = imagesc(freqs_reg, 1:nR, data_reg);
+        set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
+        colormap(gca, cmap_circ); clim([-pi pi]);
+
+        alpha_reg = ones(nR, nF) * nonsig_alpha;
+        alpha_reg(reg_sig.(key)(1:nR,1:nF)) = 1;
+        set(h_img2, 'AlphaData', alpha_reg);
+    end
+    xlabel('Frequency (Hz)'); ylabel('Channel');
+    title(reg_subtitles{row}, 'FontSize', 9);
+    set(gca, 'FontSize', 8, 'Box', 'on');
+    if row == 1
+        text(0.5, 1.22, col_labels{2}, 'Units', 'normalized', ...
+            'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
+    end
+end
+
+cb = colorbar('Location', 'southoutside');
+cb.Ticks = [-pi -pi/2 0 pi/2 pi];
+cb.TickLabels = {'-\pi', '-\pi/2', '0', '\pi/2', '\pi'};
+cb.Position = [0.25 0.02 0.5 0.015];
+cb.Label.String = 'Preferred Phase (rad)';
+sgtitle(sprintf(['Preferred Phase — Abs-Per-Pos (%s)\n' ...
+    'Significance = OMNIBUS TEST ON PHASE DIRECTION (do per-position arrows agree?)'], animal), ...
+    'FontSize', 13, 'FontWeight', 'bold');
+print(f1b, fullfile(save_root, 'preferred_phase_comparison_omnibus.pdf'), '-dpdf');
+fprintf('Figure 1b (omnibus) saved.\n');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% FIGURE 2 — Polar Histograms at Key Frequencies
@@ -556,6 +676,8 @@ animal_rho_coh_all = cell(nAnimals, 1);
 animal_rho_reg_all = cell(nAnimals, 1);
 animal_coh_phase_all = cell(nAnimals, 1);
 animal_coh_sig_all   = cell(nAnimals, 1);
+animal_coh_phase_omni    = cell(nAnimals, 1);   % H2 Hodges-Ajne (ch x freq) per animal
+animal_coh_phase_omni_ch = cell(nAnimals, 1);   % H4 Hodges-Ajne (1 x freq)  per animal
 animal_reg_phase_all = cell(nAnimals, 1);
 animal_reg_sig_all   = cell(nAnimals, 1);
 animal_hit_coh_phase  = cell(nAnimals, 1);
@@ -586,13 +708,15 @@ for a = 1:nAnimals
     tmp_d  = load(fullfile(a_reg_root, 'ph_all_sess.mat'), 'ph_comb');
     a_phd  = tmp_d.ph_comb;
 
-    a_coh_phase = struct();
-    a_coh_sig   = struct();
+    a_coh_phase      = struct();
+    a_coh_sig        = struct();
+    a_coh_phase_omni = struct();   % H2 Hodges-Ajne (across positions) per (ch, freq)
 
     % MUA
     pos_mua = unique(a_phd.MUA_ERP_trialinfo(:,16));
     nPm = numel(pos_mua);
     ph_map = NaN(a_nCh, a_nFreq);
+    om_map = NaN(a_nCh, a_nFreq);
     for ch = 1:a_nCh
         for f = 1:a_nFreq
             cp = NaN(nPm,1);
@@ -605,14 +729,17 @@ for a = 1:nAnimals
             end
             pp=angle(cp); vp=~isnan(pp);
             if any(vp), ph_map(ch,f)=angle(mean(exp(1i*pp(vp)))); end
+            if sum(vp)>=min_n_omni, om_map(ch,f)=circ_otest(pp(vp)); end
         end
     end
-    a_coh_phase.mua = ph_map;
+    a_coh_phase.mua      = ph_map;
+    a_coh_phase_omni.mua = om_map;
 
     % LFP
     pos_lfp = unique(a_phd.LFP_ERP_trialinfo(:,16));
     nPl = numel(pos_lfp);
     ph_map = NaN(a_nCh, a_nFreq);
+    om_map = NaN(a_nCh, a_nFreq);
     for ch = 1:a_nCh
         for f = 1:a_nFreq
             cp = NaN(nPl,1);
@@ -625,15 +752,18 @@ for a = 1:nAnimals
             end
             pp=angle(cp); vp=~isnan(pp);
             if any(vp), ph_map(ch,f)=angle(mean(exp(1i*pp(vp)))); end
+            if sum(vp)>=min_n_omni, om_map(ch,f)=circ_otest(pp(vp)); end
         end
     end
-    a_coh_phase.lfp = ph_map;
+    a_coh_phase.lfp      = ph_map;
+    a_coh_phase_omni.lfp = om_map;
 
     % RT
     hidx_rt  = find(a_phd.RT_trialinfo(:,20)==1);
     pos_rt   = unique(a_phd.RT_trialinfo(hidx_rt,16));
     nPr      = numel(pos_rt);
     ph_map   = NaN(a_nCh, a_nFreq);
+    om_map   = NaN(a_nCh, a_nFreq);
     for ch = 1:a_nCh
         for f = 1:a_nFreq
             cp = NaN(nPr,1);
@@ -646,9 +776,11 @@ for a = 1:nAnimals
             end
             pp=angle(cp); vp=~isnan(pp);
             if any(vp), ph_map(ch,f)=angle(mean(exp(1i*pp(vp)))); end
+            if sum(vp)>=min_n_omni, om_map(ch,f)=circ_otest(pp(vp)); end
         end
     end
-    a_coh_phase.RT = ph_map;
+    a_coh_phase.RT      = ph_map;
+    a_coh_phase_omni.RT = om_map;
 
     % Hit/Miss
     aidx_hm  = find(a_phd.trialinfo(:,20)==1|a_phd.trialinfo(:,20)==5);
@@ -656,6 +788,7 @@ for a = 1:nAnimals
     pos_hm   = unique(a_phd.trialinfo(aidx_hm,16));
     nPhm     = numel(pos_hm);
     ph_map   = NaN(a_nCh, a_nFreq);
+    om_map   = NaN(a_nCh, a_nFreq);
     for ch = 1:a_nCh
         for f = 1:a_nFreq
             cp = NaN(nPhm,1);
@@ -669,9 +802,26 @@ for a = 1:nAnimals
             end
             pp=angle(cp); vp=~isnan(pp);
             if any(vp), ph_map(ch,f)=angle(mean(exp(1i*pp(vp)))); end
+            if sum(vp)>=min_n_omni, om_map(ch,f)=circ_otest(pp(vp)); end
         end
     end
-    a_coh_phase.hit_miss = ph_map;
+    a_coh_phase.hit_miss      = ph_map;
+    a_coh_phase_omni.hit_miss = om_map;
+
+    % --- H4: Hodges-Ajne across channels (within this animal) ---
+    a_coh_phase_omni_ch = struct();
+    for m = 1:length(coh_measures)
+        key      = coh_measures{m};
+        ph_all_k = a_coh_phase.(key);
+        om_vec   = NaN(1, a_nFreq);
+        for f = 1:a_nFreq
+            vv = ~isnan(ph_all_k(:,f));
+            if sum(vv) >= min_n_omni
+                om_vec(f) = circ_otest(ph_all_k(vv,f));
+            end
+        end
+        a_coh_phase_omni_ch.(key) = om_vec;
+    end
 
     % --- Significance masks ---
     for m = 1:length(coh_measures)
@@ -795,6 +945,8 @@ for a = 1:nAnimals
     end
     animal_reg_avg{a}=a_reg_avg; animal_reg_avg_sig{a}=a_reg_avg_sig;
     animal_coh_phase_all{a}=a_coh_phase; animal_coh_sig_all{a}=a_coh_sig;
+    animal_coh_phase_omni{a}    = a_coh_phase_omni;
+    animal_coh_phase_omni_ch{a} = a_coh_phase_omni_ch;
     animal_reg_phase_all{a}=a_reg_phase; animal_reg_sig_all{a}=a_reg_sig;
 
     % --- Pairwise phase consistency (coherence) ---
@@ -1034,9 +1186,98 @@ end
 cb=colorbar('Location','southoutside');
 cb.Ticks=[-pi -pi/2 0 pi/2 pi]; cb.TickLabels={'-\pi','-\pi/2','0','\pi/2','\pi'};
 cb.Position=[0.25 0.02 0.5 0.015]; cb.Label.String='Preferred Phase (rad)';
-sgtitle('Preferred Phase — Abs-Per-Pos','FontSize',14,'FontWeight','bold');
+sgtitle({'Preferred Phase — Abs-Per-Pos', ...
+    'Significance = COHERENCE MAGNITUDE (how big the per-position arrows are)'}, ...
+    'FontSize',13,'FontWeight','bold');
 print(f4,fullfile(monkey_save_root,'monkey_avg_preferred_phase.pdf'),'-dpdf');
 fprintf('Figure 4 saved.\n');
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% FIGURE 4b — Monkey-Average Preferred Phase, masked by OMNIBUS test
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Same layout as Figure 4, but transparency is driven by the Hodges-Ajne
+% omnibus test applied at each level:
+%   Rows 1-2 (per animal): H4 across channels — do channels in this
+%     animal share a preferred direction at this frequency?
+%     Uses animal_coh_phase_omni_ch{a}.<dv>.
+%   Row 3   (monkey avg):  cross-animal omnibus has no power with n=2
+%     animals; row left at nonsig_alpha.
+%
+%   Figure 4  → arrows LONG  (coherence magnitude, how strong the signal is)
+%   Figure 4b → arrows AGREE (phase direction consistency across channels)
+
+f4b = figure('Name','Monkey-Avg Preferred Phase Omnibus (Abs-Per-Pos)', ...
+    'Units','centimeters','Position',[1 1 36 40]);
+set(f4b,'PaperUnits','centimeters','PaperSize',[36 40],'PaperPosition',[0 0 36 40]);
+
+for row=1:nDVs
+    key=row_keys{row};
+
+    % --- Coherence column ---
+    subplot(nDVs,2,(row-1)*2+1);
+    phase_stack = NaN(3, nFreq);
+    alpha_stack = ones(3, nFreq) * nonsig_alpha;
+    for a = 1:nAnimals
+        ph_a = animal_coh_avg{a}.(key);
+        nFa  = min(length(ph_a), nFreq);
+        phase_stack(a, 1:nFa) = ph_a(1:nFa);
+
+        % H4 omnibus: channels within this animal share a preferred phase?
+        om_a   = animal_coh_phase_omni_ch{a}.(key);
+        sig_a  = om_a < omni_alpha_thresh;
+        nFs    = min(length(sig_a), nFreq);
+        alpha_stack(a, find(sig_a(1:nFs))) = 1;
+    end
+    phase_stack(3,:) = angle(mean(exp(1i * phase_stack(1:nAnimals,:)), 1, 'omitnan'));
+    alpha_stack(isnan(phase_stack)) = 0;
+
+    h_img = imagesc(freq, 1:3, phase_stack);
+    set(gca,'YDir','normal','Color',[1 1 1]);
+    colormap(gca, cmap_circ); clim([-pi pi]);
+    set(h_img, 'AlphaData', alpha_stack);
+    yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
+    xlabel('Frequency (Hz)');
+    title(sprintf('%s — Coherence', row_labels{row}), 'FontSize', 9);
+    set(gca,'FontSize',8,'Box','on');
+    if row==1
+        text(0.5,1.22,'Coherence (H4 across channels)','Units','normalized', ...
+            'HorizontalAlignment','center','FontSize',13,'FontWeight','bold');
+    end
+
+    % --- Regression column (no omnibus computed; leave faded) ---
+    subplot(nDVs,2,(row-1)*2+2);
+    phase_stack_r = NaN(3, length(freqs_reg));
+    alpha_stack_r = ones(3, length(freqs_reg)) * nonsig_alpha;
+    for a = 1:nAnimals
+        vals = animal_reg_avg{a}.(key);
+        nF   = min(length(vals), length(freqs_reg));
+        phase_stack_r(a, 1:nF) = vals(1:nF);
+    end
+    phase_stack_r(3,:) = angle(mean(exp(1i * phase_stack_r(1:nAnimals,:)), 1, 'omitnan'));
+    alpha_stack_r(isnan(phase_stack_r)) = 0;
+
+    h_img2 = imagesc(freqs_reg, 1:3, phase_stack_r);
+    set(gca,'YDir','normal','Color',[1 1 1]);
+    colormap(gca, cmap_circ); clim([-pi pi]);
+    set(h_img2, 'AlphaData', alpha_stack_r);
+    yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
+    xlabel('Frequency (Hz)');
+    title(sprintf('%s — Regression', row_labels{row}), 'FontSize', 9);
+    set(gca,'FontSize',8,'Box','on');
+    if row==1
+        text(0.5,1.22,'Regression (\phi_{pref})','Units','normalized', ...
+            'HorizontalAlignment','center','FontSize',13,'FontWeight','bold');
+    end
+end
+
+cb=colorbar('Location','southoutside');
+cb.Ticks=[-pi -pi/2 0 pi/2 pi]; cb.TickLabels={'-\pi','-\pi/2','0','\pi/2','\pi'};
+cb.Position=[0.25 0.02 0.5 0.015]; cb.Label.String='Preferred Phase (rad)';
+sgtitle({'Preferred Phase — Abs-Per-Pos', ...
+    'Significance = OMNIBUS TEST ON PHASE DIRECTION (do channel arrows agree within each animal?)'}, ...
+    'FontSize',13,'FontWeight','bold');
+print(f4b,fullfile(monkey_save_root,'monkey_avg_preferred_phase_omnibus.pdf'),'-dpdf');
+fprintf('Figure 4b (omnibus) saved.\n');
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% FIGURE 5 — Monkey-Average Hit-Only Preferred Phase

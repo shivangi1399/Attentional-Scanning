@@ -1,7 +1,8 @@
 % Multiple linear regression: phase predicts RT / MUA / LFP / hit-miss
-% H2 (abs_per_pos): group trials by stimulus position (trialinfo col 16),
-% run regression within each position, average R² across positions,
-% then across channels and animals.
+% H3 (abs_per_pos_diff): group trials by (stimulus position x difficulty bin)
+% cells; difficulty (trialinfo col 18) is binned into nDiffBins quantile bins
+% within each position. Run regression within each cell, average R^2 across
+% cells, then across channels and animals.
 clearvars; close all; clc
 
 %% Dependencies
@@ -14,10 +15,11 @@ addpath /mnt/hpc/projects/MWSampling/4Shivangi/
 clc
 
 %% Settings
-nPerm  = 1000;
-alpha  = 0.05;
-Y_vars  = {'RT','MUA_ERP_ampl_all','LFP_ERP_ampl_all','hit_miss'};
-animals = {'hermes', 'klecks'};
+nPerm     = 1000;
+alpha     = 0.05;
+nDiffBins = 4;          % within-position quantile bins of difficulty (col 18)
+Y_vars    = {'RT','MUA_ERP_ampl_all','LFP_ERP_ampl_all','hit_miss'};
+animals   = {'hermes', 'klecks'};
 
 %% Loop over animals
 
@@ -28,7 +30,7 @@ for a = 1:numel(animals)
     data_folder    = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
         ['results_' animalName], 'multi_lin_reg', 'cp10_till_100');
     results_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
-        ['results_' animalName], 'multi_lin_reg', 'abs_per_pos', 'cp10_till_100');
+        ['results_' animalName], 'multi_lin_reg', 'abs_per_pos_diff', 'cp10_till_100');
     if ~exist(results_folder,'dir'), mkdir(results_folder); end
     cd(data_folder); load('ph_all_sess.mat')
 
@@ -37,6 +39,7 @@ for a = 1:numel(animals)
     [numTrials, numFreq, numCh] = size(ph_all);
 
     reg_results = struct();
+    reg_results.nDiffBins = nDiffBins;
 
     for d = 1:length(Y_vars)
         depVarName = Y_vars{d};
@@ -60,6 +63,16 @@ for a = 1:numel(animals)
         positions = unique(trlInfo_all(:,16));
         nPos      = numel(positions);
 
+        % Within-position quantile bins of difficulty (dE00, col 18)
+        diff_bin = bin_difficulty_per_pos(trlInfo_all(:,18), trlInfo_all(:,16), positions, nDiffBins);
+
+        % Enumerate (position x difficulty) cells
+        cell_pos = repmat(positions(:), 1, nDiffBins);
+        cell_dif = repmat(1:nDiffBins, nPos, 1);
+        cell_pos = cell_pos(:);
+        cell_dif = cell_dif(:);
+        nCell    = numel(cell_pos);
+
         reg_results.(depVarName).R2_phase    = NaN(numCh, numFreq);
         reg_results.(depVarName).R2_MUA      = NaN(numCh, numFreq);
         reg_results.(depVarName).R2_Amp      = NaN(numCh, numFreq);
@@ -67,6 +80,8 @@ for a = 1:numel(animals)
         reg_results.(depVarName).R2_any      = NaN(numCh, numFreq);
         reg_results.(depVarName).R_phase     = NaN(numCh, numFreq);
         reg_results.(depVarName).phi_pref    = NaN(numCh, numFreq);
+        reg_results.(depVarName).cell_pos    = cell_pos;
+        reg_results.(depVarName).cell_dif    = cell_dif;
 
         for ch = 1:numCh
             fprintf('Channel %d/%d\n', ch, numCh);
@@ -78,10 +93,10 @@ for a = 1:numel(animals)
                 Y_all = Y_all_orig;
             end
 
-            %% Pre-compute per-position, per-frequency X and Y for real data and perms
+            %% Pre-compute per-cell, per-frequency X and Y for real data and perms
 
-            X_all_freq_pos = cell(nPos, numFreq);
-            Y_all_freq_pos = cell(nPos, numFreq);
+            X_all_freq_cell = cell(nCell, numFreq);
+            Y_all_freq_cell = cell(nCell, numFreq);
 
             Robs_phase    = zeros(numFreq,1);
             Robs_MUA      = zeros(numFreq,1);
@@ -101,22 +116,23 @@ for a = 1:numel(animals)
                     keepIdx = true(size(Y_all));
                 end
 
-                R2_pos_phase    = NaN(nPos,1);
-                R2_pos_MUA      = NaN(nPos,1);
-                R2_pos_Amp      = NaN(nPos,1);
-                R2_pos_AmpPhase = NaN(nPos,1);
-                R2_pos_any      = NaN(nPos,1);
-                beta_sin_pos    = NaN(nPos,1);
-                beta_cos_pos    = NaN(nPos,1);
+                R2_cell_phase    = NaN(nCell,1);
+                R2_cell_MUA      = NaN(nCell,1);
+                R2_cell_Amp      = NaN(nCell,1);
+                R2_cell_AmpPhase = NaN(nCell,1);
+                R2_cell_any      = NaN(nCell,1);
+                beta_sin_cell    = NaN(nCell,1);
+                beta_cos_cell    = NaN(nCell,1);
 
-                for p = 1:nPos
-                    pos_mask = trlInfo_all(:,16) == positions(p);
-                    nanIdx   = any(isnan(X),2) | isnan(Y_all) | ~keepIdx | ~pos_mask;
-                    X_clean  = X(~nanIdx,:);
-                    Y_clean  = Y_all(~nanIdx);
+                for c = 1:nCell
+                    cell_mask = (trlInfo_all(:,16) == cell_pos(c)) & ...
+                                (diff_bin == cell_dif(c));
+                    nanIdx    = any(isnan(X),2) | isnan(Y_all) | ~keepIdx | ~cell_mask;
+                    X_clean   = X(~nanIdx,:);
+                    Y_clean   = Y_all(~nanIdx);
 
-                    X_all_freq_pos{p,f} = X_clean;
-                    Y_all_freq_pos{p,f} = Y_clean;
+                    X_all_freq_cell{c,f} = X_clean;
+                    Y_all_freq_cell{c,f} = Y_clean;
 
                     if length(Y_clean) < size(X_clean,2)+1, continue; end
 
@@ -128,27 +144,27 @@ for a = 1:numel(animals)
                         b_null  = glmfit(ones(size(Y_clean,1),1),Y_clean,'binomial','link','logit');
                         p_null  = glmval(b_null,ones(size(Y_clean,1),1),'logit');
                         LL_null = sum(Y_clean.*log(p_null+eps)+(1-Y_clean).*log(1-p_null+eps));
-                        R2_pos_any(p) = 1-(LL_full/LL_null);
+                        R2_cell_any(c) = 1-(LL_full/LL_null);
 
                         b_red = glmfit(X_clean(:,1:3),Y_clean,'binomial','link','logit');
                         p_red = glmval(b_red,X_clean(:,1:3),'logit');
                         LL_red = sum(Y_clean.*log(p_red+eps)+(1-Y_clean).*log(1-p_red+eps));
-                        R2_pos_phase(p) = 1-(LL_full/LL_red);
+                        R2_cell_phase(c) = 1-(LL_full/LL_red);
 
                         b_red = glmfit(X_clean(:,[1 3 4 5]),Y_clean,'binomial','link','logit');
                         p_red = glmval(b_red,X_clean(:,[1 3 4 5]),'logit');
                         LL_red = sum(Y_clean.*log(p_red+eps)+(1-Y_clean).*log(1-p_red+eps));
-                        R2_pos_MUA(p) = 1-(LL_full/LL_red);
+                        R2_cell_MUA(c) = 1-(LL_full/LL_red);
 
                         b_red = glmfit(X_clean(:,[1 2 4 5]),Y_clean,'binomial','link','logit');
                         p_red = glmval(b_red,X_clean(:,[1 2 4 5]),'logit');
                         LL_red = sum(Y_clean.*log(p_red+eps)+(1-Y_clean).*log(1-p_red+eps));
-                        R2_pos_Amp(p) = 1-(LL_full/LL_red);
+                        R2_cell_Amp(c) = 1-(LL_full/LL_red);
 
                         b_red = glmfit(X_clean(:,1:2),Y_clean,'binomial','link','logit');
                         p_red = glmval(b_red,X_clean(:,1:2),'logit');
                         LL_red = sum(Y_clean.*log(p_red+eps)+(1-Y_clean).*log(1-p_red+eps));
-                        R2_pos_AmpPhase(p) = 1-(LL_full/LL_red);
+                        R2_cell_AmpPhase(c) = 1-(LL_full/LL_red);
 
                     else
                         X_full   = [ones(size(X_clean,1),1), X_clean];
@@ -156,39 +172,39 @@ for a = 1:numel(animals)
                         RSS_full = sum((Y_clean - X_full*b_full).^2);
                         RSS_null = sum((Y_clean - mean(Y_clean)).^2);
 
-                        R2_pos_any(p) = max(0,(RSS_null-RSS_full)/RSS_null);
+                        R2_cell_any(c) = max(0,(RSS_null-RSS_full)/RSS_null);
 
                         X_red = [ones(size(X_clean,1),1), X_clean(:,1:3)];
                         b_red = regress(Y_clean,X_red); RSS_red = sum((Y_clean-X_red*b_red).^2);
-                        R2_pos_phase(p) = max(0,(RSS_red-RSS_full)/RSS_null);
+                        R2_cell_phase(c) = max(0,(RSS_red-RSS_full)/RSS_null);
 
                         X_red = [ones(size(X_clean,1),1), X_clean(:,[1 3 4 5])];
                         b_red = regress(Y_clean,X_red); RSS_red = sum((Y_clean-X_red*b_red).^2);
-                        R2_pos_MUA(p) = max(0,(RSS_red-RSS_full)/RSS_null);
+                        R2_cell_MUA(c) = max(0,(RSS_red-RSS_full)/RSS_null);
 
                         X_red = [ones(size(X_clean,1),1), X_clean(:,[1 2 4 5])];
                         b_red = regress(Y_clean,X_red); RSS_red = sum((Y_clean-X_red*b_red).^2);
-                        R2_pos_Amp(p) = max(0,(RSS_red-RSS_full)/RSS_null);
+                        R2_cell_Amp(c) = max(0,(RSS_red-RSS_full)/RSS_null);
 
                         X_red = [ones(size(X_clean,1),1), X_clean(:,1:2)];
                         b_red = regress(Y_clean,X_red); RSS_red = sum((Y_clean-X_red*b_red).^2);
-                        R2_pos_AmpPhase(p) = max(0,(RSS_red-RSS_full)/RSS_null);
+                        R2_cell_AmpPhase(c) = max(0,(RSS_red-RSS_full)/RSS_null);
                     end
 
-                    beta_sin_pos(p) = b_full(end-1);
-                    beta_cos_pos(p) = b_full(end);
+                    beta_sin_cell(c) = b_full(end-1);
+                    beta_cos_cell(c) = b_full(end);
                 end
 
-                % Average R² across positions
-                Robs_phase(f)    = mean(R2_pos_phase,    'omitnan');
-                Robs_MUA(f)      = mean(R2_pos_MUA,      'omitnan');
-                Robs_Amp(f)      = mean(R2_pos_Amp,      'omitnan');
-                Robs_AmpPhase(f) = mean(R2_pos_AmpPhase, 'omitnan');
-                Robs_any(f)      = mean(R2_pos_any,       'omitnan');
+                % Average R^2 across (position x difficulty) cells
+                Robs_phase(f)    = mean(R2_cell_phase,    'omitnan');
+                Robs_MUA(f)      = mean(R2_cell_MUA,      'omitnan');
+                Robs_Amp(f)      = mean(R2_cell_Amp,      'omitnan');
+                Robs_AmpPhase(f) = mean(R2_cell_AmpPhase, 'omitnan');
+                Robs_any(f)      = mean(R2_cell_any,       'omitnan');
 
-                % Preferred phase: circular mean of per-position beta vectors
-                mean_sin = mean(beta_sin_pos, 'omitnan');
-                mean_cos = mean(beta_cos_pos, 'omitnan');
+                % Preferred phase: circular mean of per-cell beta vectors
+                mean_sin = mean(beta_sin_cell, 'omitnan');
+                mean_cos = mean(beta_cos_cell, 'omitnan');
                 R_phase(f)  = sqrt(mean_sin^2 + mean_cos^2);
                 phi_pref(f) = atan2(mean_sin, mean_cos);
             end
@@ -197,23 +213,23 @@ for a = 1:numel(animals)
 
             nJobs = ceil(nPerm/10);
             cfg_array = cell(nJobs,1);
-            output_dir = fullfile(results_folder,'perm_R_pos',depVarName,num2str(ch));
+            output_dir = fullfile(results_folder,'perm_R_pos_diff',depVarName,num2str(ch));
             if ~exist(output_dir,'dir'), mkdir(output_dir); end
             for j = 1:nJobs
                 perm_start = (j-1)*10 + 1;
                 perm_end   = min(j*10, nPerm);
-                cfg_array{j}.X_all_freq_pos = X_all_freq_pos;
-                cfg_array{j}.Y_all_freq_pos = Y_all_freq_pos;
-                cfg_array{j}.numFreq        = numFreq;
-                cfg_array{j}.nPos           = nPos;
-                cfg_array{j}.isLogistic     = isLogistic;
-                cfg_array{j}.perm_idx       = perm_start:perm_end;
-                cfg_array{j}.output_dir     = output_dir;
+                cfg_array{j}.X_all_freq_cell = X_all_freq_cell;
+                cfg_array{j}.Y_all_freq_cell = Y_all_freq_cell;
+                cfg_array{j}.numFreq         = numFreq;
+                cfg_array{j}.nCell           = nCell;
+                cfg_array{j}.isLogistic      = isLogistic;
+                cfg_array{j}.perm_idx        = perm_start:perm_end;
+                cfg_array{j}.output_dir      = output_dir;
             end
 
-%             slurmfun(@regress_perm_R_pos, cfg_array, ...
-%                 'partition','8GB','stopOnError',false,'useUserPath',true, ...
-%                 'waitForToolboxes',{'statistics_toolbox'});
+            slurmfun(@regress_perm_R_per_pos_diff, cfg_array, ...
+                'partition','8GB','stopOnError',false,'useUserPath',true, ...
+                'waitForToolboxes',{'statistics_toolbox'});
 
             %% Collect permutation nulls
 
@@ -274,7 +290,7 @@ for a = 1:numel(animals)
             R_any_ch      = NaN(numCh, numFreq);
 
             for ch = 1:numCh
-                perm_file = fullfile(results_folder,'perm_R_pos',depVarName,num2str(ch), ...
+                perm_file = fullfile(results_folder,'perm_R_pos_diff',depVarName,num2str(ch), ...
                     sprintf('perm_%04d.mat',perm));
                 if ~isfile(perm_file), continue; end
                 load(perm_file,'results');
@@ -304,7 +320,7 @@ for a = 1:numel(animals)
         reg_results.(depVarName).channel_avg_R.AmpPhase = mean(reg_results.(depVarName).R2_AmpPhase, 1,'omitnan');
         reg_results.(depVarName).channel_avg_R.any      = mean(reg_results.(depVarName).R2_any,      1,'omitnan');
 
-        chan_avg_save_dir = fullfile(results_folder,'perm_R_pos',depVarName);
+        chan_avg_save_dir = fullfile(results_folder,'perm_R_pos_diff',depVarName);
         if ~exist(chan_avg_save_dir,'dir'), mkdir(chan_avg_save_dir); end
         obs_avg = reg_results.(depVarName).channel_avg_R;
         save(fullfile(chan_avg_save_dir,'channel_avg_results.mat'), ...
@@ -314,7 +330,7 @@ for a = 1:numel(animals)
     end
 
     cd(results_folder)
-    save('multi_regression_channelwise_R2_abs_per_pos.mat','reg_results','-v7.3');
+    save('multi_regression_channelwise_R2_abs_per_pos_diff.mat','reg_results','-v7.3');
     fprintf('Saved per-animal results for %s.\n', animalName);
 end
 
@@ -335,7 +351,8 @@ for d = 1:length(Y_vars)
 
     for a = 1:nAnimals
         avg_file = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
-            ['results_' animals{a}],'multi_lin_reg','abs_per_pos','cp10_till_100','perm_R_pos',depVarName,'channel_avg_results.mat');
+            ['results_' animals{a}],'multi_lin_reg','abs_per_pos_diff','cp10_till_100', ...
+            'perm_R_pos_diff',depVarName,'channel_avg_results.mat');
         if ~isfile(avg_file)
             warning('Channel-average results not found for %s (%s).', depVarName, animals{a}); continue
         end
@@ -364,7 +381,7 @@ for d = 1:length(Y_vars)
     end
 
     monkey_save_dir = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined', ...
-        'multi_lin_reg','abs_per_pos','cp10_till_100',depVarName);
+        'multi_lin_reg','abs_per_pos_diff','cp10_till_100',depVarName);
     if ~exist(monkey_save_dir,'dir'), mkdir(monkey_save_dir); end
     save(fullfile(monkey_save_dir,'monkey_avg_results.mat'), ...
         'monkey_avg_obs','tmax_monkey','thresh_monkey','p_monkey','obs_monkey','animals','-v7.3');
