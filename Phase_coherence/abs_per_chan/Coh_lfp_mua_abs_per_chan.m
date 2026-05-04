@@ -1,4 +1,17 @@
-% Coherence between pre stimulus phase and post stimulus lfp amplitude or mua amplitude - all analysis is done on absolute
+% =====================================================================
+% Phase coherence: pre-stimulus phase vs. post-stimulus LFP / MUA amplitude
+% Hypothesis H1+H4 (abs_per_chan/)
+%
+% Claim: trials within a channel share a preferred phase (H1 at trial
+% level), but channels are NOT required to share a preferred phase
+% across the array.
+%
+% Recipe: pool all trials in complex space within each channel (H1
+% trial-level recipe); abs() per channel (Way 2 across channels);
+% arithmetic mean of magnitudes across channels and animals.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all
 close all
 clc
@@ -16,6 +29,7 @@ addpath /opt/ESIsoftware/matlab/tdt_preprocessing/
 addpath /mnt/hpc/opt/ESIsoftware/matlab/esi-nbf
 addpath /opt/ESIsoftware/matlab/slurmfun/
 addpath /mnt/hpc/projects/MWSampling/4Shivangi/code/coherence_analysis
+addpath /mnt/hpc/projects/MWSampling/4Shivangi/code/Phase_coherence/functions
 addpath /mnt/hpc/projects/MWSampling/4Shivangi
 clc
 
@@ -50,11 +64,11 @@ for a = 1:numel(animals)
         switch sig
             case 'lfp'
                 amp_field = 'LFP_ERP_ampl_all';
-                perm_func = @phase_coherence_perm_lfp;
+                perm_func = @phase_coherence_perm_lfp_abs_per_chan;
                 data_load_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'multi_lin_reg', 'cp10_till_100');
             case 'mua'
                 amp_field = 'MUA_ERP_ampl_all';
-                perm_func = @phase_coherence_perm_mua;
+                perm_func = @phase_coherence_perm_mua_abs_per_chan;
                 data_load_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'multi_lin_reg', 'cp10_till_100');
         end
 
@@ -81,6 +95,7 @@ for a = 1:numel(animals)
 
         % Permutation test
         nTrials  = length(ph_comb.trialinfo);
+        rng(2025)
         perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
         trial_idx = 1:size(ph_comb.trialinfo, 1);
 

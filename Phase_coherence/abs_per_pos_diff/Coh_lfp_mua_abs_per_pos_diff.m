@@ -1,8 +1,20 @@
-% Coherence between pre-stimulus phase and post-stimulus LFP/MUA amplitude
-% H3 (abs_per_pos_diff): group trials by (stimulus position x difficulty bin)
-% cells. Difficulty (trialinfo col 18) is binned into nDiffBins quantile bins
-% within each position. Compute complex coherence within each cell, abs()
-% per cell, average magnitudes across cells, then across channels and animals.
+% =====================================================================
+% Phase coherence: pre-stimulus phase vs. post-stimulus LFP / MUA amplitude
+% Hypothesis H3 (abs_per_pos_diff/)
+%
+% Claim: each (position × difficulty bin) cell has its own phase-DV
+% relationship; cells are NOT required to share a preferred phase.
+%
+% Recipe: per-cell complex resultant; abs() per cell (Way 2 across
+% cells); arithmetic mean of magnitudes across cells, channels, and
+% animals.
+%
+% Stimulus position read from trialinfo column 16. Difficulty
+% (trialinfo col 18) is binned into nDiffBins quantile bins WITHIN
+% each position.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all; close all; clc
 
 %% Settings
@@ -84,6 +96,7 @@ for a = 1:numel(animals)
         %% Permutation (SLURM) — same per-cell abs logic
 
         nTrials      = length(trial_idx);
+        rng(2025)
         perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
         cfg = cell(1, nCh);

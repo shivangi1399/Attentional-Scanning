@@ -1,4 +1,22 @@
-% Correlation between pre stimulus phase and reaction time or performance measures
+% =====================================================================
+% Circular-linear correlation: pre-stimulus phase vs. reaction time
+% AND phase-opposition / inverted-miss-ITC for hit/miss
+% Hypothesis H1 (complex/)
+%
+% Claim: a single optimal phase is shared across all trials, positions,
+% difficulty levels, channels, and animals.
+%
+% Recipe: pool all trials in complex space within each channel; average
+% complex resultants across channels and animals; take abs() / angle()
+% only at the very end. Way 1 at every level.
+%
+% Hit/miss measures:
+%   POS = ITC_hits + ITC_misses (Phase Opposition Sum, VanRullen 2016)
+%   ITC = abs(mean(exp(i·phase_inverted))) where miss-trial phases are
+%         flipped by pi before averaging.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all
 close all
 clc
@@ -82,6 +100,7 @@ for a = 1:numel(animals)
     hit_idx  = find(ph_comb.RT_trialinfo(:,20) == 1);
     nTrials  = length(hit_idx);
 
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);
@@ -162,6 +181,7 @@ for a = 1:numel(animals)
     hit_labels = (ph_comb.trialinfo(all_idx, 20) == 1);
     nTrials    = length(all_idx);
 
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);

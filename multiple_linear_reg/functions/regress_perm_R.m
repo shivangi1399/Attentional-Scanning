@@ -24,12 +24,18 @@ perm_indices = cfg.perm_idx(:)';
 
 for perm_idx = perm_indices
 
+    rng(2025 + perm_idx)
+
     % Initialize null distributions for this permutation
     null_R_phase    = zeros(numFreq, 1);
     null_R_MUA      = zeros(numFreq, 1);
     null_R_Amp      = zeros(numFreq, 1);
     null_R_AmpPhase = zeros(numFreq, 1);
     null_R_any      = zeros(numFreq, 1);
+
+    % Full-model sin/cos betas (NaN where no fit) for paired R_phase test.
+    null_b_sin = nan(numFreq, 1);
+    null_b_cos = nan(numFreq, 1);
 
     for f = 1:numFreq
         X_clean = X_all_freq{f};
@@ -76,6 +82,11 @@ for perm_idx = perm_indices
             RSS_red = sum((Y_perm - X_red*b_red).^2);
             null_R_AmpPhase(f) = max(0, (RSS_red - RSS_full) / RSS_null);
 
+            % Full-model sin/cos betas: regress() returns intercept first,
+            % so end-1 = beta_sin, end = beta_cos (matches observed convention).
+            null_b_sin(f) = b_full(end-1);
+            null_b_cos(f) = b_full(end);
+
         else
             % LOGISTIC REGRESSION
             b_full = glmfit(X_clean, Y_perm, 'binomial', 'link', 'logit');
@@ -113,6 +124,10 @@ for perm_idx = perm_indices
             p_red = glmval(b_red, X_clean(:,1:2), 'logit');
             LL_red = sum(Y_perm.*log(p_red+eps) + (1-Y_perm).*log(1-p_red+eps));
             null_R_AmpPhase(f) = 1 - (LL_full / LL_red);
+
+            % Full-model sin/cos betas (glmfit also returns intercept first).
+            null_b_sin(f) = b_full(end-1);
+            null_b_cos(f) = b_full(end);
         end
     end
 
@@ -129,6 +144,11 @@ for perm_idx = perm_indices
     results.null_R_Amp      = null_R_Amp;
     results.null_R_AmpPhase = null_R_AmpPhase;
     results.null_R_any      = null_R_any;
+
+    % Full-model sin/cos betas — used by stats scripts to build paired
+    % R_phase = |complex β| null curves at H1/H4 channel-aggregation level.
+    results.null_b_sin = null_b_sin;
+    results.null_b_cos = null_b_cos;
 
     % Save results
     if ~exist(output_dir, 'dir')

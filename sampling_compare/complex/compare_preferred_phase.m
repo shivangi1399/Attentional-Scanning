@@ -99,15 +99,16 @@ clc
 
 base_results = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animal]);
 
-coh_root  = fullfile(base_results, 'phase_coherence', 'cp10_till_100');
-reg_root  = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');
-corr_root = fullfile(base_results, 'phase_correlation', 'cp10_till_100');
+coh_root  = fullfile(base_results, 'phase_coherence',   'complex', 'cp10_till_100');
+reg_root  = fullfile(base_results, 'multi_lin_reg',     'complex', 'cp10_till_100');
+corr_root = fullfile(base_results, 'phase_correlation', 'complex', 'cp10_till_100');
+data_root = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');   % shared input data (frequency.mat, ph_all_sess.mat)
 
 save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/sampling_compare', animal);
 if ~exist(save_root, 'dir'), mkdir(save_root); end
 
 % Frequency axis (shared across coherence channels)
-load(fullfile(coh_root, 'frequency.mat'));
+load(fullfile(data_root, 'frequency.mat'));
 freq  = frequency;
 nFreq = numel(freq);
 nCh   = 64;
@@ -619,11 +620,12 @@ for a = 1:nAnimals
     animalName = animals_all{a};
     fprintf('\n=== Loading preferred phase data for %s ===\n', animalName);
 
-    a_base     = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
-    a_coh_root = fullfile(a_base, 'phase_coherence', 'cp10_till_100');
-    a_reg_root = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');
+    a_base      = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
+    a_coh_root  = fullfile(a_base, 'phase_coherence', 'complex', 'cp10_till_100');
+    a_reg_root  = fullfile(a_base, 'multi_lin_reg',   'complex', 'cp10_till_100');
+    a_data_root = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');   % shared input data
 
-    tmp_f   = load(fullfile(a_coh_root, 'frequency.mat'));
+    tmp_f   = load(fullfile(a_data_root, 'frequency.mat'));
     a_freq  = tmp_f.frequency;
     a_nFreq = numel(a_freq);
     a_nCh   = 64;
@@ -686,7 +688,7 @@ for a = 1:nAnimals
     % Level 1 sig:    itc >= quantile(max(itc_perm),0.95) from itc_perm.mat.
     % Level 2 phase:  angle(itc_complex_chan_avg) if saved, else phase_chan_avg_itc,
     %                 from channel_avg_results_itc.mat; masked by itc_chan_avg >= thresh.
-    a_corr_root = fullfile(a_base, 'phase_correlation', 'cp10_till_100');
+    a_corr_root = fullfile(a_base, 'phase_correlation', 'complex', 'cp10_till_100');
     hm_phase = NaN(a_nCh, a_nFreq);
     for ch = 1:a_nCh
         itc_file = fullfile(a_corr_root, 'hit_miss', 'all_loc_difflev', num2str(ch), 'itc.mat');
@@ -882,8 +884,8 @@ end
 %   Hit/miss:   angle(itc_complex_monkey_avg) if saved, else phase_monkey_avg_itc,
 %               from monkey_avg_results_itc.mat; masked by itc_monkey_avg >= thresh.
 results_combined_pre = '/mnt/hpc/projects/MWSampling/4Shivangi/results_combined';
-coh_combined_pre     = fullfile(results_combined_pre, 'phase_coherence',  'cp10_till_100');
-corr_combined_pre    = fullfile(results_combined_pre, 'phase_correlation', 'cp10_till_100');
+coh_combined_pre     = fullfile(results_combined_pre, 'phase_coherence',  'complex', 'cp10_till_100');
+corr_combined_pre    = fullfile(results_combined_pre, 'phase_correlation', 'complex', 'cp10_till_100');
 
 monkey_avg_phase = struct();
 monkey_avg_sig   = struct();
@@ -980,7 +982,7 @@ for row = 1:nDVs
     mk_sig_r = false(1, length(freqs_reg));
     if ~isempty(dv_idx)
         mk_avg_file = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/results_combined', ...
-            'multi_lin_reg', 'cp10_till_100', reg_dvs_all{dv_idx}, 'monkey_avg_results.mat');
+            'multi_lin_reg', 'complex', 'cp10_till_100', reg_dvs_all{dv_idx}, 'monkey_avg_results.mat');
         if isfile(mk_avg_file)
             mk_r = load(mk_avg_file, 'monkey_avg_obs', 'thresh_monkey');
             nF_r = min(length(mk_r.monkey_avg_obs.phase), length(freqs_reg));
@@ -1055,17 +1057,16 @@ for a = 1:nAnimals
     animalName = animals_all{a};
     fprintf('\n=== Computing hit/miss preferred phase for %s ===\n', animalName);
 
-    a_base     = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
-    a_coh_root = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');
-    a_reg_root = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');
+    a_base      = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
+    a_data_root = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');   % shared input data
 
-    tmp_f   = load(fullfile(a_coh_root, 'frequency.mat'));
+    tmp_f   = load(fullfile(a_data_root, 'frequency.mat'));
     a_freq  = tmp_f.frequency;
     a_nFreq = numel(a_freq);
     a_nCh   = 64;
 
     % Load combined single-trial phase data
-    a_ph = load(fullfile(a_reg_root, 'ph_all_sess.mat'), 'ph_comb');
+    a_ph = load(fullfile(a_data_root, 'ph_all_sess.mat'), 'ph_comb');
     a_ph = a_ph.ph_comb;
     nTrials_phase = size(a_ph.phase_all, 1);
 

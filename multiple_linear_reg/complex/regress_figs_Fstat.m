@@ -1,11 +1,16 @@
+% =====================================================================
+% Figures: regression F-statistic (H1 — complex/)
+%
+% Loads permutation-corrected F-statistic results from
+% regress_stats_Fstat.m and produces visualisations of the
+% significance of the sin(φ) + cos(φ) phase regressors across
+% frequencies and channels.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clearvars;
 close all;
 clc
-
-% Description:
-% -------------
-% This script creates a set of visualizations for regression analysis relating independent 
-% variables to dependent variables across frequency spectrum
 
 %% Load data
 

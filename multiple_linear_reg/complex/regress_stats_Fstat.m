@@ -1,14 +1,21 @@
+% =====================================================================
+% Multiple linear regression: F-statistic for phase contribution
+% Hypothesis H1 (complex/)
+%
+% Claim: same as H1 in regress_stats_R2.m — a single optimal phase
+% shared across all trials, positions, difficulty levels, channels,
+% and animals. This script uses the F-statistic (instead of R²) to
+% test significance of the sin(φ) + cos(φ) regressors.
+%
+% Recipe: per-channel regression with permutation null; max-stat
+% correction across frequencies; average F across channels/animals.
+% F normalises by residual variance and df; R normalises by RSS0.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clearvars;
 close all;
 clc
-
-% Description:
-% -------------
-% Goal: Conduct channel-wise regression analysis relating independent variables
-% to each dependent variable across the frequency spectrum. Statistical
-% significance is evaluated using non-parametric permutation testing to control
-% for family-wise error rate.
-% F normalizes by residual variance and df and R normalizes by total variance (RSS0)
 
 %% Dependencies
 

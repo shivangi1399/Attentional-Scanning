@@ -1,4 +1,22 @@
-% Correlation between pre stimulus phase and post stimulus lfp amplitude or mua amplitude
+% =====================================================================
+% Circular-linear correlation: pre-stimulus phase vs. post-stimulus
+%                              LFP / MUA amplitude
+% Hypothesis H1 (complex/)
+%
+% Claim: a single optimal phase is shared across all trials, positions,
+% difficulty levels, channels, and animals.
+%
+% Recipe: pool all trials in complex space within each channel; average
+% complex resultants across channels and animals; take abs() / angle()
+% only at the very end. Way 1 at every level.
+%
+% Note: circ_corrcl returns a non-negative correlation magnitude by
+% construction, so the per-channel observed value is already a
+% magnitude; the directional information lives in the auxiliary
+% phase_spec (saved separately) for the within-channel complex pool.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all
 close all
 clc
@@ -42,7 +60,8 @@ for a = 1:numel(animals)
     session_paths_files = cellfun(@(x) fullfile(datafolder,x, 'clean_lfp.mat'), session_names, 'uniform',0);
 
     phase_paths = cellfun(@(x) fullfile(datafolder, x,'Phase_analysis/hit_miss'),session_names, 'uniform',0);
-    output_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_correlation', 'complex', 'cp10_till_100');
+    output_folder    = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'phase_correlation', 'complex', 'cp10_till_100');
+    data_load_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName], 'multi_lin_reg', 'cp10_till_100');
 
     for s = 1:numel(signal_types)
         sig = signal_types{s};
@@ -61,7 +80,7 @@ for a = 1:numel(animals)
         %% Correlation all locations and difficulty levels
 
         % circular-linear correlation (real)
-        cd(output_folder)
+        cd(data_load_folder)
         load('ph_all_sess.mat')
 
         for ichan = 1:64
@@ -84,17 +103,18 @@ for a = 1:numel(animals)
 
         % circular-linear correlation (permutation)
 
-        cd(output_folder)
+        cd(data_load_folder)
         load('ph_all_sess.mat')
         nTrials = size(ph_comb.phase_all, 1);
 
+        rng(2025)
         perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
         cfg = cell(1,64);
         for i = 1:64
             cfg{i}.ichan = i;
             cfg{i}.permut_n = permut_n;
-            cfg{i}.infile = fullfile(output_folder);
+            cfg{i}.infile = fullfile(data_load_folder);
             cfg{i}.outfile = fullfile(output_folder, sig, 'all_loc_difflev');
             cfg{i}.perm_indices = perm_indices;
         end
@@ -108,7 +128,7 @@ for a = 1:numel(animals)
 
         fprintf('Computing %s channel-average permutation null for %s...\n', upper(sig), animalName);
 
-        cd(output_folder)
+        cd(data_load_folder)
         load('frequency.mat')
         freq = frequency;
         nCh = 64;

@@ -1,9 +1,18 @@
-% Coherence between pre-stimulus phase and post-stimulus LFP/MUA amplitude
-% H2 (abs_per_pos): group trials by stimulus position (trialinfo col 16),
-% compute complex coherence within each position, abs() per position, average
-% magnitudes across positions, then across channels and animals.
-% Compare H1 (complex/): abs applied after averaging all trials across channels
-% and animals in complex space.
+% =====================================================================
+% Phase coherence: pre-stimulus phase vs. post-stimulus LFP / MUA amplitude
+% Hypothesis H2 (abs_per_pos/)
+%
+% Claim: each stimulus position has its own phase-DV relationship;
+% positions are NOT required to share a preferred phase.
+%
+% Recipe: per-position complex resultant; abs() per position
+% (Way 2 across positions); arithmetic mean of magnitudes across
+% positions, channels, and animals.
+%
+% Stimulus position read from trialinfo column 16.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all; close all; clc
 
 %% Settings
@@ -83,6 +92,7 @@ for a = 1:numel(animals)
         %% Permutation (SLURM) — perm function does same per-position abs logic
 
         nTrials      = length(trial_idx);
+        rng(2025)
         perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
         cfg = cell(1, nCh);

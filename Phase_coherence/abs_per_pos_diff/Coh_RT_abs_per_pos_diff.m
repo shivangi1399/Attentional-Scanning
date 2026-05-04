@@ -1,9 +1,20 @@
-% Coherence between pre-stimulus phase and reaction time (RT)
-% H3 (abs_per_pos_diff): group hit trials by (stimulus position x difficulty
-% bin) cells. Difficulty (RT_trialinfo col 18) is binned into nDiffBins
-% quantile bins within each position. Compute complex coherence within each
-% cell, abs() per cell, average magnitudes across cells, then across channels
-% and animals.
+% =====================================================================
+% Phase coherence: pre-stimulus phase vs. reaction time (hit trials only)
+% Hypothesis H3 (abs_per_pos_diff/)
+%
+% Claim: each (position × difficulty bin) cell has its own phase-DV
+% relationship; cells are NOT required to share a preferred phase.
+%
+% Recipe: per-cell complex resultant; abs() per cell (Way 2 across
+% cells); arithmetic mean of magnitudes across cells, channels, and
+% animals.
+%
+% Stimulus position read from RT_trialinfo column 16. Difficulty
+% (RT_trialinfo col 18) is binned into nDiffBins quantile bins WITHIN
+% each position.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all; close all; clc
 
 %% Settings
@@ -78,6 +89,7 @@ for a = 1:numel(animals)
     %% Permutation (SLURM)
 
     nTrials      = length(hit_idx);
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);

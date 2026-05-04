@@ -16,7 +16,6 @@
 %
 % Figures:
 %   Fig 1   — Preferred phase heatmaps (channels x freq), magnitude-masked
-%   Fig 1b  — Same heatmaps, omnibus (Hodges-Ajne) phase-direction-masked
 %   Fig 2   — Polar histograms at the most-significant frequencies
 %   Fig 3   — Pairwise circular-circular consistency across DVs
 %   Fig 4   — Monkey-average preferred phase heatmap
@@ -28,8 +27,6 @@ clearvars; close all; clc
 animal       = 'hermes';   % 'hermes' or 'klecks'
 nDiffBins    = 4;
 nonsig_alpha = 0.2;
-min_n_omni   = 4;
-omni_alpha   = 0.05;
 
 %% 2. PATHS & DEPENDENCIES
 
@@ -64,7 +61,6 @@ tmp_ph = load(fullfile(data_load_folder, 'ph_all_sess.mat'), 'ph_comb');
 a_ph   = tmp_ph.ph_comb;
 
 coh_phase      = struct();   % preferred phase per (ch, freq) for each measure
-coh_phase_omni = struct();   % H3 Hodges-Ajne over (p,d) cells per (ch, freq)
 coh_measures   = {'mua', 'lfp', 'RT', 'hit_miss'};
 
 dv_specs = struct( ...
@@ -104,7 +100,6 @@ for m = 1:length(coh_measures)
     end
 
     phase_map = NaN(nCh, nFreq);
-    omni_map  = NaN(nCh, nFreq);
 
     for ch = 1:nCh
         for f = 1:nFreq
@@ -133,13 +128,9 @@ for m = 1:length(coh_measures)
             if any(valid)
                 phase_map(ch,f) = angle(mean(exp(1i * phi_cell(valid))));
             end
-            if sum(valid) >= min_n_omni
-                omni_map(ch,f) = circ_otest(phi_cell(valid));
-            end
         end
     end
-    coh_phase.(key)      = phase_map;
-    coh_phase_omni.(key) = omni_map;
+    coh_phase.(key) = phase_map;
 end
 
 %% 4. LOAD REGRESSION PREFERRED PHASE
@@ -322,67 +313,6 @@ sgtitle(sprintf(['Preferred Phase — Abs-Per-Pos-Diff (%s)\n' ...
     'FontSize', 13, 'FontWeight', 'bold');
 print(f1, fullfile(save_root, 'preferred_phase_comparison.pdf'), '-dpdf');
 fprintf('Figure 1 saved.\n');
-
-%% FIGURE 1b — Phase heatmaps masked by Hodges-Ajne over (p,d) cells
-
-f1b = figure('Name', ['Preferred Phase Omnibus (Abs-Per-Pos-Diff) - ' animal], ...
-    'Units', 'centimeters', 'Position', [1 1 36 40]);
-set(f1b, 'PaperUnits', 'centimeters', 'PaperSize', [36 40], 'PaperPosition', [0 0 36 40]);
-
-for row = 1:nDVs
-    key = row_keys{row};
-
-    subplot(nDVs, 2, (row-1)*2 + 1);
-    data_coh = coh_phase.(key);
-    h_img    = imagesc(freq, 1:nCh, data_coh);
-    set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ); clim([-pi pi]);
-
-    omni_map  = coh_phase_omni.(key);
-    sig_omni  = omni_map < omni_alpha;
-    alpha_coh = ones(nCh, nFreq) * nonsig_alpha;
-    alpha_coh(sig_omni) = 1;
-    set(h_img, 'AlphaData', alpha_coh);
-
-    xlabel('Frequency (Hz)'); ylabel('Channel');
-    title(coh_subtitles{row}, 'FontSize', 9);
-    set(gca, 'FontSize', 8, 'Box', 'on');
-    if row == 1
-        text(0.5, 1.22, 'Coherence (H3 per pos x diff)', 'Units', 'normalized', ...
-            'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
-    end
-
-    subplot(nDVs, 2, (row-1)*2 + 2);
-    if has_reg
-        data_reg = reg_phase.(key);
-        nR = size(data_reg,1); nF = size(data_reg,2);
-        h_img2 = imagesc(freqs_reg, 1:nR, data_reg);
-        set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ); clim([-pi pi]);
-
-        alpha_reg = ones(nR, nF) * nonsig_alpha;
-        alpha_reg(reg_sig.(key)(1:nR,1:nF)) = 1;
-        set(h_img2, 'AlphaData', alpha_reg);
-    end
-    xlabel('Frequency (Hz)'); ylabel('Channel');
-    title(reg_subtitles{row}, 'FontSize', 9);
-    set(gca, 'FontSize', 8, 'Box', 'on');
-    if row == 1
-        text(0.5, 1.22, col_labels{2}, 'Units', 'normalized', ...
-            'HorizontalAlignment', 'center', 'FontSize', 13, 'FontWeight', 'bold');
-    end
-end
-
-cb = colorbar('Location', 'southoutside');
-cb.Ticks = [-pi -pi/2 0 pi/2 pi];
-cb.TickLabels = {'-\pi', '-\pi/2', '0', '\pi/2', '\pi'};
-cb.Position = [0.25 0.02 0.5 0.015];
-cb.Label.String = 'Preferred Phase (rad)';
-sgtitle(sprintf(['Preferred Phase — Abs-Per-Pos-Diff (%s)\n' ...
-    'Significance = OMNIBUS over (p,d) cells (do per-cell arrows agree?)'], animal), ...
-    'FontSize', 13, 'FontWeight', 'bold');
-print(f1b, fullfile(save_root, 'preferred_phase_comparison_omnibus.pdf'), '-dpdf');
-fprintf('Figure 1b (omnibus) saved.\n');
 
 %% FIGURE 2 — Polar Histograms at Top-significant Frequencies
 

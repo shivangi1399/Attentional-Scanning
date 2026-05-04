@@ -1,4 +1,17 @@
-% Coherence between pre stimulus phase and reaction time - only absolute saved
+% =====================================================================
+% Phase coherence: pre-stimulus phase vs. reaction time (hit trials only)
+% Hypothesis H1+H4 (abs_per_chan/)
+%
+% Claim: trials within a channel share a preferred phase (H1 at trial
+% level), but channels are NOT required to share a preferred phase
+% across the array.
+%
+% Recipe: pool all trials in complex space within each channel (H1
+% trial-level recipe); abs() per channel (Way 2 across channels);
+% arithmetic mean of magnitudes across channels and animals.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all
 close all
 clc
@@ -74,6 +87,7 @@ for a = 1:numel(animals)
     hit_idx  = find(ph_comb.RT_trialinfo(:,20) == 1);
     nTrials  = length(hit_idx);
 
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);
@@ -86,7 +100,7 @@ for a = 1:numel(animals)
         cfg{ichan}.trial_idx    = hit_idx;
     end
 
-    slurmfun(@phase_coherence_RT_perm, cfg, ...
+    slurmfun(@phase_coherence_RT_perm_abs_per_chan, cfg, ...
         'partition',   '8GB', ...
         'stopOnError', false, ...
         'useUserPath', true);

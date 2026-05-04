@@ -1,4 +1,16 @@
-% Coherence between pre stimulus phase and post stimulus lfp amplitude or mua amplitude
+% =====================================================================
+% Phase coherence: pre-stimulus phase vs. post-stimulus LFP / MUA amplitude
+% Hypothesis H1 (complex/)
+%
+% Claim: a single optimal phase is shared across all trials, positions,
+% difficulty levels, channels, and animals.
+%
+% Recipe: pool all trials in complex space within each channel; average
+% complex resultants across channels and animals; take abs() only at
+% the very end. Way 1 at every level.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all
 close all
 clc
@@ -80,6 +92,7 @@ for a = 1:numel(animals)
 
         % Permutation test
         nTrials  = length(ph_comb.trialinfo);
+        rng(2025)
         perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
         trial_idx = 1:size(ph_comb.trialinfo, 1);
 

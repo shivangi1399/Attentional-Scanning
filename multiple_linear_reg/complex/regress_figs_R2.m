@@ -1,12 +1,15 @@
+% =====================================================================
+% Figures: regression R² (H1 — complex/)
+%
+% Loads per-channel R² results from regress_stats_R2.m and produces
+% visualisations of variance explained by the full phase model
+% (sin(φ) + cos(φ)) across frequencies and channels.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clearvars;
 close all;
 clc
-
-% Description:
-% -------------
-% This script creates a set of visualizations for R² (variance explained)
-% from the channel-wise regression analysis in regress_stats_R.m.
-% Loads: multi_regression_channelwise_R2.mat
 
 %% Load data
 

@@ -1,16 +1,22 @@
+% =====================================================================
+% Multiple linear regression: phase predicts DV
+% Hypothesis H1 (complex/)
+%
+% Claim: a single optimal phase is shared across all trials, positions,
+% difficulty levels, channels, and animals.
+%
+% Recipe: pool all trials in complex space within each channel; fit
+%   DV ~ pupil + MUA_baseline + amp + sin(φ) + cos(φ) per channel;
+%   vector-sum β_complex = β_cos + i·β_sin across channels (Way 1)
+%   and animals. R² is arithmetic-mean across channels/animals
+%   (magnitude only, so Way 1 vs Way 2 does not apply to R²).
+%   Significance via permutation null with max-stat correction.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clearvars;
 close all;
 clc;
-
-% Description:
-% -------------
-
-% Goal: Conduct channel-wise regression analysis relating independent variables
-% to each dependent variable across the frequency spectrum. Statistical
-% significance is evaluated using non-parametric permutation testing to control
-% for family-wise error rate.
-% Computes both per-channel and channel-average max-stat thresholds.
-% F normalizes by residual variance and df and R normalizes by total variance (RSS0)
 
 %% Dependencies
 addpath /opt/fieldtrip_github/; ft_defaults
@@ -287,6 +293,13 @@ for a = 1:numel(animals)
         null_avg_R_AmpPhase_freq = zeros(nPerm, numFreq);
         null_avg_R_any_freq      = zeros(nPerm, numFreq);
 
+        % H1 paired-test channel-average for R_phase = |complex β|.
+        % Way 1 across channels: complex-mean per-channel betas, then |.|.
+        % Stays NaN if perm files lack betas (older runs, before update).
+        null_avg_b_sin_freq      = nan(nPerm, numFreq);
+        null_avg_b_cos_freq      = nan(nPerm, numFreq);
+        null_avg_R_phase_mag_freq = nan(nPerm, numFreq);
+
         for perm = 1:nPerm
             % Initialize container for per-channel R
             R_phase_ch    = NaN(numCh, numFreq);
@@ -294,6 +307,8 @@ for a = 1:numel(animals)
             R_Amp_ch      = NaN(numCh, numFreq);
             R_AmpPhase_ch = NaN(numCh, numFreq);
             R_any_ch      = NaN(numCh, numFreq);
+            b_sin_ch      = NaN(numCh, numFreq);
+            b_cos_ch      = NaN(numCh, numFreq);
 
             % Load each channel's permutation result
             for ch = 1:numCh
@@ -308,6 +323,10 @@ for a = 1:numel(animals)
                 R_Amp_ch(ch,:)      = results.null_R_Amp';
                 R_AmpPhase_ch(ch,:) = results.null_R_AmpPhase';
                 R_any_ch(ch,:)      = results.null_R_any';
+                if isfield(results,'null_b_sin')
+                    b_sin_ch(ch,:) = results.null_b_sin';
+                    b_cos_ch(ch,:) = results.null_b_cos';
+                end
             end
 
             % Average over channels (dim 1), result is 1 x numFreq
@@ -330,6 +349,13 @@ for a = 1:numel(animals)
             null_avg_R_Amp_freq(perm,:)      = avg_R_Amp;
             null_avg_R_AmpPhase_freq(perm,:) = avg_R_AmpPhase;
             null_avg_R_any_freq(perm,:)      = avg_R_any;
+
+            % Way-1 channel aggregation for R_phase (H1)
+            mean_b_sin = mean(b_sin_ch, 1, 'omitnan');
+            mean_b_cos = mean(b_cos_ch, 1, 'omitnan');
+            null_avg_b_sin_freq(perm,:)       = mean_b_sin;
+            null_avg_b_cos_freq(perm,:)       = mean_b_cos;
+            null_avg_R_phase_mag_freq(perm,:) = sqrt(mean_b_sin.^2 + mean_b_cos.^2);
         end
 
         % Compute channel-average thresholds
@@ -346,13 +372,28 @@ for a = 1:numel(animals)
         reg_results.(depVarName).channel_avg_R.AmpPhase = mean(reg_results.(depVarName).R2_AmpPhase,1,'omitnan');
         reg_results.(depVarName).channel_avg_R.any      = mean(reg_results.(depVarName).R2_any,1,'omitnan');
 
+        % R_phase / phi_pref channel-average: Way 1 across channels (H1).
+        % Vector-sum the per-channel β components, then take magnitude / angle.
+        % Channels with different preferred phases partially cancel — H1
+        % claims they share an optimal phase.
+        R_phase_ch  = reg_results.(depVarName).R_phase;
+        phi_pref_ch = reg_results.(depVarName).phi_pref;
+        beta_sin_ch = R_phase_ch .* sin(phi_pref_ch);
+        beta_cos_ch = R_phase_ch .* cos(phi_pref_ch);
+        mean_sin_ch = mean(beta_sin_ch, 1, 'omitnan');
+        mean_cos_ch = mean(beta_cos_ch, 1, 'omitnan');
+        reg_results.(depVarName).channel_avg_R.R_phase  = sqrt(mean_sin_ch.^2 + mean_cos_ch.^2);
+        reg_results.(depVarName).channel_avg_R.phi_pref = atan2(mean_sin_ch, mean_cos_ch);
+
         % Save channel-average results for cross-animal analysis
         chan_avg_save_dir = fullfile(results_folder, 'perm_R', depVarName);
         if ~exist(chan_avg_save_dir, 'dir'), mkdir(chan_avg_save_dir); end
         obs_avg = reg_results.(depVarName).channel_avg_R;
         save(fullfile(chan_avg_save_dir, 'channel_avg_results.mat'), ...
             'null_avg_R_phase_freq', 'null_avg_R_MUA_freq', 'null_avg_R_Amp_freq', ...
-            'null_avg_R_AmpPhase_freq', 'null_avg_R_any_freq', 'obs_avg', '-v7.3');
+            'null_avg_R_AmpPhase_freq', 'null_avg_R_any_freq', ...
+            'null_avg_b_sin_freq', 'null_avg_b_cos_freq', 'null_avg_R_phase_mag_freq', ...
+            'obs_avg', '-v7.3');
         fprintf('Saved channel-average results for %s cross-animal analysis.\n', animalName);
 
     end
@@ -379,6 +420,13 @@ for d = 1:length(Y_vars)
         obs_monkey.(R2_types{t})  = [];
         perm_monkey.(R2_types{t}) = [];
     end
+    obs_monkey.R_phase  = [];      % per-channel-avg R_phase per animal
+    obs_monkey.phi_pref = [];      % per-channel-avg phi_pref per animal
+
+    % Channel-avg per-perm betas / R_phase per animal (paired test).
+    perm_monkey_b_sin   = [];      % [nPerm × nFreq × nAnimals]
+    perm_monkey_b_cos   = [];
+    perm_monkey_R_phase = [];      % redundant with sqrt(b_sin² + b_cos²) but kept for sanity
 
     for a = 1:nAnimals
         animal_folder = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ...
@@ -398,6 +446,15 @@ for d = 1:length(Y_vars)
             obs_monkey.(rtype)  = cat(1, obs_monkey.(rtype),  tmp.obs_avg.(rtype));
             perm_monkey.(rtype) = cat(3, perm_monkey.(rtype), tmp.(['null_avg_R_' rtype '_freq']));
         end
+        if isfield(tmp.obs_avg, 'R_phase')
+            obs_monkey.R_phase  = cat(1, obs_monkey.R_phase,  tmp.obs_avg.R_phase);
+            obs_monkey.phi_pref = cat(1, obs_monkey.phi_pref, tmp.obs_avg.phi_pref);
+        end
+        if isfield(tmp,'null_avg_b_sin_freq')
+            perm_monkey_b_sin   = cat(3, perm_monkey_b_sin,   tmp.null_avg_b_sin_freq);
+            perm_monkey_b_cos   = cat(3, perm_monkey_b_cos,   tmp.null_avg_b_cos_freq);
+            perm_monkey_R_phase = cat(3, perm_monkey_R_phase, tmp.null_avg_R_phase_mag_freq);
+        end
     end
 
     % Check all animals loaded
@@ -406,10 +463,11 @@ for d = 1:length(Y_vars)
         continue
     end
 
-    monkey_avg_obs = struct();
-    tmax_monkey    = struct();
-    thresh_monkey  = struct();
-    p_monkey       = struct();
+    monkey_avg_obs   = struct();
+    tmax_monkey      = struct();
+    thresh_monkey    = struct();
+    p_monkey         = struct();
+    perm_monkey_avg  = struct();   % per-perm null curves [nPerm × nFreq] for paired test
 
     for t = 1:numel(R2_types)
         rtype = R2_types{t};
@@ -422,8 +480,33 @@ for d = 1:length(Y_vars)
         tmax_monkey.(rtype)   = max(perm_avg, [], 2);
         thresh_monkey.(rtype) = quantile(tmax_monkey.(rtype), 1 - alpha);
 
+        % Persist the per-perm monkey-average null curve so the paired
+        % difference test (compare_hypotheses.m) can use it as P_n directly.
+        perm_monkey_avg.(rtype) = perm_avg;
+
         % p-value
         p_monkey.(rtype) = mean(tmax_monkey.(rtype) >= max(monkey_avg_obs.(rtype)));
+    end
+
+    % R_phase / phi_pref monkey-average: Way 1 across animals (H1 — animals
+    % are claimed to share preferred phase). Vector-sum per-animal β, then
+    % magnitude / angle.
+    if size(obs_monkey.R_phase, 1) >= 1
+        beta_sin_an = obs_monkey.R_phase .* sin(obs_monkey.phi_pref);
+        beta_cos_an = obs_monkey.R_phase .* cos(obs_monkey.phi_pref);
+        mean_sin_an = mean(beta_sin_an, 1, 'omitnan');
+        mean_cos_an = mean(beta_cos_an, 1, 'omitnan');
+        monkey_avg_obs.R_phase  = sqrt(mean_sin_an.^2 + mean_cos_an.^2);
+        monkey_avg_obs.phi_pref = atan2(mean_sin_an, mean_cos_an);
+    end
+
+    % R_phase paired-null monkey-average: Way 1 across animals. Take the
+    % complex-mean of per-animal channel-avg betas across animals, then |.|.
+    % Stays absent if perm files lacked betas.
+    if ~isempty(perm_monkey_b_sin)
+        mean_b_sin_an = mean(perm_monkey_b_sin, 3, 'omitnan');   % [nPerm × nFreq]
+        mean_b_cos_an = mean(perm_monkey_b_cos, 3, 'omitnan');
+        perm_monkey_avg.R_phase = sqrt(mean_b_sin_an.^2 + mean_b_cos_an.^2);
     end
 
     % Save
@@ -431,7 +514,7 @@ for d = 1:length(Y_vars)
     if ~exist(monkey_save_dir, 'dir'), mkdir(monkey_save_dir); end
     save(fullfile(monkey_save_dir, 'monkey_avg_results.mat'), ...
         'monkey_avg_obs', 'tmax_monkey', 'thresh_monkey', 'p_monkey', ...
-        'obs_monkey', 'animals', '-v7.3');
+        'perm_monkey_avg', 'obs_monkey', 'animals', '-v7.3');
 
     fprintf('Saved monkey-average results for %s\n', depVarName);
     fprintf('  Thresholds: phase=%.4f  MUA=%.4f  Amp=%.4f  AmpPhase=%.4f  any=%.4f\n', ...

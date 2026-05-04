@@ -1,4 +1,16 @@
-% Coherence between pre stimulus phase and reaction time
+% =====================================================================
+% Phase coherence: pre-stimulus phase vs. reaction time (hit trials only)
+% Hypothesis H1 (complex/)
+%
+% Claim: a single optimal phase is shared across all trials, positions,
+% difficulty levels, channels, and animals.
+%
+% Recipe: pool all trials in complex space within each channel; average
+% complex resultants across channels and animals; take abs() only at
+% the very end. Way 1 at every level.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all
 close all
 clc
@@ -73,6 +85,7 @@ for a = 1:numel(animals)
     hit_idx  = find(ph_comb.RT_trialinfo(:,20) == 1);
     nTrials  = length(hit_idx);
 
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);

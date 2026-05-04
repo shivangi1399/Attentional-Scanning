@@ -1,11 +1,24 @@
-% Correlation between pre-stimulus phase and RT / hit-miss outcome
-% H3 (abs_per_pos_diff): group trials by (stimulus position x difficulty bin)
-% cells. Difficulty (col 18) is binned into nDiffBins quantile bins within
-% each position. Compute each measure within each cell, average across cells,
-% then across channels and animals.
-%   RT: circ_corrcl per cell -> average
-%   POS: (ITC_hits + ITC_misses) per cell -> average
-%   ITC: abs(mean(exp(i*phase_inverted))) per cell -> average
+% =====================================================================
+% Circular-linear correlation: pre-stimulus phase vs. reaction time
+% AND phase-opposition / inverted-miss-ITC for hit/miss
+% Hypothesis H3 (abs_per_pos_diff/)
+%
+% Claim: each (position × difficulty bin) cell has its own phase-DV
+% relationship; cells are NOT required to share a preferred phase.
+%
+% Recipe per cell (Way 2 across cells afterwards):
+%   RT:  circ_corrcl(phase, RT)              per cell → mean
+%   POS: ITC_hits + ITC_misses               per cell → mean
+%   ITC: abs(mean(exp(i·phase_inverted)))    per cell → mean
+%        (miss phases flipped by pi)
+%
+% Then arithmetic mean across channels and animals.
+%
+% Stimulus position read from trialinfo column 16. Difficulty
+% (col 18) is binned into nDiffBins quantile bins WITHIN each position.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all; close all; clc
 
 %% Settings
@@ -87,6 +100,7 @@ for a = 1:numel(animals)
 
     cd(data_folder); load('ph_all_sess.mat')
     nTrials      = length(hit_idx);
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);
@@ -168,6 +182,7 @@ for a = 1:numel(animals)
 
     cd(data_folder); load('ph_all_sess.mat')
     nTrials      = length(all_idx);
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);

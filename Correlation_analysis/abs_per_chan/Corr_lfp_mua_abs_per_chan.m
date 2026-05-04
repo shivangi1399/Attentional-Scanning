@@ -1,4 +1,18 @@
-% Correlation between pre stimulus phase and post stimulus lfp amplitude or mua amplitude
+% =====================================================================
+% Circular-linear correlation: pre-stimulus phase vs. post-stimulus
+%                              LFP / MUA amplitude
+% Hypothesis H1+H4 (abs_per_chan/)
+%
+% Claim: trials within a channel share a preferred phase (H1 at trial
+% level), but channels are NOT required to share a preferred phase.
+%
+% Recipe: circ_corrcl on all trials per channel (the function returns a
+% non-negative magnitude — abs is implicit at channel level, Way 2
+% across channels); arithmetic mean of magnitudes across channels and
+% animals.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all
 close all
 clc
@@ -90,6 +104,7 @@ for a = 1:numel(animals)
         load('ph_all_sess.mat')
         nTrials = size(ph_comb.phase_all, 1);
 
+        rng(2025)
         perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
         cfg = cell(1,64);

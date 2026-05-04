@@ -1,10 +1,23 @@
-% Correlation between pre-stimulus phase and RT / hit-miss outcome
-% H2 (abs_per_pos): group trials by stimulus position (trialinfo col 16),
-% compute each measure within each position, average across positions,
-% then across channels and animals.
-%   RT: circ_corrcl per position → average
-%   POS: (ITC_hits + ITC_misses) per position → average
-%   ITC: abs(mean(exp(i*phase_inverted))) per position → average
+% =====================================================================
+% Circular-linear correlation: pre-stimulus phase vs. reaction time
+% AND phase-opposition / inverted-miss-ITC for hit/miss
+% Hypothesis H2 (abs_per_pos/)
+%
+% Claim: each stimulus position has its own phase-DV relationship;
+% positions are NOT required to share a preferred phase.
+%
+% Recipe per position (Way 2 across positions afterwards):
+%   RT:  circ_corrcl(phase, RT)              per position → mean
+%   POS: ITC_hits + ITC_misses               per position → mean
+%   ITC: abs(mean(exp(i·phase_inverted)))    per position → mean
+%        (miss phases flipped by pi)
+%
+% Then arithmetic mean across channels and animals.
+%
+% Stimulus position read from trialinfo column 16.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all; close all; clc
 
 %% Settings
@@ -73,6 +86,7 @@ for a = 1:numel(animals)
 
     cd(data_folder); load('ph_all_sess.mat')
     nTrials      = length(hit_idx);
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);
@@ -146,6 +160,7 @@ for a = 1:numel(animals)
 
     cd(data_folder); load('ph_all_sess.mat')
     nTrials      = length(all_idx);
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);

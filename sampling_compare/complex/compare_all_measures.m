@@ -18,14 +18,15 @@ addpath /mnt/hpc/projects/MWSampling/4Shivangi/code/Correlation_analysis/functio
 
 base_results = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animal]);
 
-coh_root  = fullfile(base_results, 'phase_coherence', 'cp10_till_100');
-corr_root = fullfile(base_results, 'phase_correlation', 'cp10_till_100');
-reg_root  = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');
+coh_root  = fullfile(base_results, 'phase_coherence',   'complex', 'cp10_till_100');
+corr_root = fullfile(base_results, 'phase_correlation', 'complex', 'cp10_till_100');
+reg_root  = fullfile(base_results, 'multi_lin_reg',     'complex', 'cp10_till_100');
+data_root = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');   % shared input data (frequency.mat, ph_all_sess.mat)
 
 save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/sampling_compare', animal);
 if ~exist(save_root, 'dir'), mkdir(save_root); end
 
-load(fullfile(coh_root, 'frequency.mat'));
+load(fullfile(data_root, 'frequency.mat'));
 freq = frequency;
 nCh = 64;
 
@@ -403,9 +404,9 @@ fprintf('Loading monkey-average results...\n');
 
 results_combined = '/mnt/hpc/projects/MWSampling/4Shivangi/results_combined';
 
-coh_combined  = fullfile(results_combined, 'phase_coherence',  'cp10_till_100');
-corr_combined = fullfile(results_combined, 'phase_correlation', 'cp10_till_100');
-reg_combined  = fullfile(results_combined, 'multi_lin_reg',     'cp10_till_100');
+coh_combined  = fullfile(results_combined, 'phase_coherence',  'complex', 'cp10_till_100');
+corr_combined = fullfile(results_combined, 'phase_correlation', 'complex', 'cp10_till_100');
+reg_combined  = fullfile(results_combined, 'multi_lin_reg',     'complex', 'cp10_till_100');
 
 monkey_save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/sampling_compare/monkey_avg');
 if ~exist(monkey_save_root, 'dir'), mkdir(monkey_save_root); end

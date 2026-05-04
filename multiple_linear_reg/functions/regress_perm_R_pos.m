@@ -14,11 +14,17 @@ perm_indices = cfg.perm_idx(:)';
 
 for perm_idx = perm_indices
 
+    rng(2025 + perm_idx)
+
     null_R_phase    = zeros(numFreq, 1);
     null_R_MUA      = zeros(numFreq, 1);
     null_R_Amp      = zeros(numFreq, 1);
     null_R_AmpPhase = zeros(numFreq, 1);
     null_R_any      = zeros(numFreq, 1);
+
+    % Per-position full-model sin/cos betas — for paired R_phase test.
+    null_b_sin_pos = nan(nPos, numFreq);
+    null_b_cos_pos = nan(nPos, numFreq);
 
     for f = 1:numFreq
         R_phase_pos    = nan(nPos,1);
@@ -59,6 +65,9 @@ for perm_idx = perm_indices
                 b_red = regress(Y_perm,X_red); RSS_red = sum((Y_perm-X_red*b_red).^2);
                 R_AmpPhase_pos(p) = max(0,(RSS_red - RSS_full)/RSS_null);
 
+                null_b_sin_pos(p,f) = b_full(end-1);
+                null_b_cos_pos(p,f) = b_full(end);
+
             else
                 b_full = glmfit(X_clean,Y_perm,'binomial','link','logit');
                 p_full = glmval(b_full,X_clean,'logit');
@@ -88,6 +97,9 @@ for perm_idx = perm_indices
                 p_red = glmval(b_red,X_clean(:,1:2),'logit');
                 LL_red = sum(Y_perm.*log(p_red+eps)+(1-Y_perm).*log(1-p_red+eps));
                 R_AmpPhase_pos(p) = 1-(LL_full/LL_red);
+
+                null_b_sin_pos(p,f) = b_full(end-1);
+                null_b_cos_pos(p,f) = b_full(end);
             end
         end
 
@@ -109,6 +121,12 @@ for perm_idx = perm_indices
     results.null_R_Amp        = null_R_Amp;
     results.null_R_AmpPhase   = null_R_AmpPhase;
     results.null_R_any        = null_R_any;
+
+    % Per-position full-model sin/cos betas (nPos × numFreq) — used to
+    % build paired R_phase = |complex β| nulls under H2 aggregation
+    % (Way 2: |β_pos| per pos, then mean across positions).
+    results.null_b_sin_pos = null_b_sin_pos;
+    results.null_b_cos_pos = null_b_cos_pos;
 
     if ~exist(output_dir, 'dir'), mkdir(output_dir); end
     save(fullfile(output_dir, sprintf('perm_%04d.mat', perm_idx)), 'results');

@@ -1,7 +1,19 @@
-% Correlation between pre-stimulus phase and post-stimulus LFP/MUA amplitude
-% H2 (abs_per_pos): group trials by stimulus position (trialinfo col 16),
-% compute circ_corrcl within each position, average correlations across positions,
-% then across channels and animals.
+% =====================================================================
+% Circular-linear correlation: pre-stimulus phase vs. post-stimulus
+%                              LFP / MUA amplitude
+% Hypothesis H2 (abs_per_pos/)
+%
+% Claim: each stimulus position has its own phase-DV relationship;
+% positions are NOT required to share a preferred phase.
+%
+% Recipe: per-position circ_corrcl (already a non-negative magnitude);
+% arithmetic mean across positions (Way 2 across positions); arithmetic
+% mean across channels and animals.
+%
+% Stimulus position read from trialinfo column 16.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all; close all; clc
 
 %% Settings
@@ -75,6 +87,7 @@ for a = 1:numel(animals)
         %% Permutation (SLURM)
 
         nTrials      = size(ph_comb.phase_all, 1);
+        rng(2025)
         perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
         cfg = cell(1, 64);

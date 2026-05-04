@@ -1,4 +1,20 @@
-% Correlation between pre stimulus phase and reaction time or performance measures
+% =====================================================================
+% Circular-linear correlation: pre-stimulus phase vs. reaction time
+% AND phase-opposition / inverted-miss-ITC for hit/miss
+% Hypothesis H1+H4 (abs_per_chan/)
+%
+% Claim: trials within a channel share a preferred phase (H1 at trial
+% level), but channels are NOT required to share a preferred phase.
+%
+% Recipe: per-channel computation on all trials together
+%   RT:  circ_corrcl(phase, RT)                    (non-negative magnitude)
+%   POS: ITC_hits + ITC_misses                     (non-negative magnitude)
+%   ITC: abs(mean(exp(i·phase_inverted)))          (non-negative magnitude)
+% Way 2 across channels (arithmetic mean of channel magnitudes); Way 2
+% across animals.
+%
+% See sampling_compare/README.md for the Way-1 / Way-2 framing.
+% =====================================================================
 clear all
 close all
 clc
@@ -83,6 +99,7 @@ for a = 1:numel(animals)
     hit_idx  = find(ph_comb.RT_trialinfo(:,20) == 1);
     nTrials  = length(hit_idx);
 
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);
@@ -161,6 +178,7 @@ for a = 1:numel(animals)
     hit_labels = (ph_comb.trialinfo(all_idx, 20) == 1);
     nTrials    = length(all_idx);
 
+    rng(2025)
     perm_indices = arrayfun(@(x) randperm(nTrials), 1:permut_n, 'UniformOutput', false);
 
     cfg = cell(1, nCh);
