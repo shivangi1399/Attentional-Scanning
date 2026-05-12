@@ -42,6 +42,7 @@ phase_paths = cellfun(@(x) fullfile(datafolder, x,'Phase_analysis/hit_miss'), ..
     session_names, 'uniform',0);
 
 output_folder = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/phase_coherence/cp10_till_100';
+data_folder   = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks/multi_lin_reg/cp10_till_100';
 
 %% coherence particular locations and difficulty levels - keep all Dlev
 
@@ -65,7 +66,7 @@ for iloc = 1:length(targ_loc)
 end
 
 % Load frequency and channels
-cd(output_folder)
+cd(data_folder)
 load('frequency.mat')
 freq = frequency;
 nCh = 64;

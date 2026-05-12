@@ -134,7 +134,7 @@ slurmfun(@circlin_regression_perm, cfg, ...
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Plotting all locations and difficulty levels
 
-cd(output_folder)
+cd(data_load_folder)
 load('frequency.mat')
 freq = frequency;
 nCh = 64;

@@ -182,7 +182,7 @@ for a = 1:numel(animals)
     %  =========================================================
 
     fprintf('Computing RT channel-average null for %s...\n', animalName);
-    cd(corr_folder); load('frequency.mat'); freq = frequency; nFreq = numel(freq);
+    cd(data_folder); load('frequency.mat'); freq = frequency; nFreq = numel(freq);
 
     corr_all_ch = NaN(nCh, nFreq); corr_perm_all_ch = [];
 

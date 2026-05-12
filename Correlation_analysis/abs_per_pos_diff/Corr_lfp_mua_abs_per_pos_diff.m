@@ -119,7 +119,7 @@ for a = 1:numel(animals)
         %% Channel-average null distribution (per animal)
 
         fprintf('Computing %s channel-average null for %s...\n', upper(sig), animalName);
-        cd(output_folder); load('frequency.mat'); freq = frequency; nFreq = numel(freq);
+        cd(data_load_folder); load('frequency.mat'); freq = frequency; nFreq = numel(freq);
 
         nCh = 64;
         corr_all_ch      = NaN(nCh, nFreq);

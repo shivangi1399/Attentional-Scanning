@@ -204,7 +204,7 @@ for a = 1:numel(animals)
     save_root_RT = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/phase_correlation/abs_per_chan', animalName, 'cp10_till_100', 'RT', 'all_loc_difflev');
     if ~exist(save_root_RT, 'dir'), mkdir(save_root_RT); end
 
-    cd(corr_folder)
+    cd(data_folder)
     load('frequency.mat')
     freq = frequency;
     nFreq = numel(freq);

@@ -119,7 +119,7 @@ for a = 1:numel(animals)
 
         fprintf('Computing %s channel-average permutation null for %s...\n', upper(sig), animalName);
 
-        cd(output_folder)
+        cd(data_load_folder)
         load('frequency.mat')
         freq = frequency;
         nFreq = numel(freq);
