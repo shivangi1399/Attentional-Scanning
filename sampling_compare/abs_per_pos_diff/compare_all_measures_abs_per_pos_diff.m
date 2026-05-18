@@ -21,11 +21,12 @@ base_results = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' an
 coh_root  = fullfile(base_results, 'phase_coherence',   'abs_per_pos_diff', 'cp10_till_100');
 corr_root = fullfile(base_results, 'phase_correlation', 'abs_per_pos_diff', 'cp10_till_100');
 reg_root  = fullfile(base_results, 'multi_lin_reg',     'abs_per_pos_diff', 'cp10_till_100');
+data_root = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');   % shared input data (frequency.mat, ph_all_sess.mat)
 
 save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/sampling_compare_abs_per_pos_diff', animal);
 if ~exist(save_root, 'dir'), mkdir(save_root); end
 
-load(fullfile(coh_root, 'frequency.mat'));
+load(fullfile(data_root, 'frequency.mat'));
 freq = frequency;
 nCh  = 64;
 

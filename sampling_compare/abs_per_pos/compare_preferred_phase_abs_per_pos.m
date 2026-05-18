@@ -65,8 +65,7 @@ nCh   = 64;
 
 fprintf('Computing coherence preferred phase from raw data for %s...\n', animal);
 
-data_load_folder = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');
-tmp_ph = load(fullfile(data_load_folder, 'ph_all_sess.mat'), 'ph_comb');
+tmp_ph = load(fullfile(data_root, 'ph_all_sess.mat'), 'ph_comb');
 a_ph   = tmp_ph.ph_comb;
 
 coh_phase       = struct();
@@ -333,7 +332,7 @@ for row = 1:nDVs
     data_coh = coh_phase.(key);
     h_img    = imagesc(freq, 1:nCh, data_coh);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ); clim([-pi pi]);
+    colormap(gca, cmap_circ); caxis([-pi pi]);
 
     alpha_coh = ones(nCh, nFreq) * nonsig_alpha;
     alpha_coh(coh_sig.(key)) = 1;
@@ -354,7 +353,7 @@ for row = 1:nDVs
         nR = size(data_reg,1); nF = size(data_reg,2);
         h_img2 = imagesc(freqs_reg, 1:nR, data_reg);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ); clim([-pi pi]);
+        colormap(gca, cmap_circ); caxis([-pi pi]);
 
         alpha_reg = ones(nR, nF) * nonsig_alpha;
         alpha_reg(reg_sig.(key)(1:nR,1:nF)) = 1;
@@ -928,7 +927,7 @@ for a = 1:nAnimals
             data=ph_coh.(lbl);
             h_img=imagesc(a_freq,1:a_nCh,data);
             set(gca,'YDir','normal','Color',[1 1 1]);
-            colormap(gca,cmap_circ); clim([-pi pi]);
+            colormap(gca,cmap_circ); caxis([-pi pi]);
             set(h_img,'AlphaData',~isnan(data));
             xlabel('Frequency (Hz)'); ylabel('Channel');
             title(coh_st_hm{row},'FontSize',9); set(gca,'FontSize',8,'Box','on');
@@ -940,7 +939,7 @@ for a = 1:nAnimals
             data=ph_reg.(lbl);
             h_img=imagesc(a_freq,1:a_nCh,data);
             set(gca,'YDir','normal','Color',[1 1 1]);
-            colormap(gca,cmap_circ); clim([-pi pi]);
+            colormap(gca,cmap_circ); caxis([-pi pi]);
             set(h_img,'AlphaData',~isnan(data));
             xlabel('Frequency (Hz)'); ylabel('Channel');
             title(reg_st_hm{row},'FontSize',9); set(gca,'FontSize',8,'Box','on');
@@ -988,7 +987,7 @@ for row=1:nDVs
 
     h_img=imagesc(freq,1:3,phase_stack);
     set(gca,'YDir','normal','Color',[1 1 1]);
-    colormap(gca,cmap_circ); clim([-pi pi]);
+    colormap(gca,cmap_circ); caxis([-pi pi]);
     set(h_img,'AlphaData',alpha_stack);
     yticks(1:3); yticklabels([animals_all,{'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -1024,7 +1023,7 @@ for row=1:nDVs
 
     h_img2=imagesc(freqs_reg,1:3,phase_stack_r);
     set(gca,'YDir','normal','Color',[1 1 1]);
-    colormap(gca,cmap_circ); clim([-pi pi]);
+    colormap(gca,cmap_circ); caxis([-pi pi]);
     set(h_img2,'AlphaData',alpha_stack_r);
     yticks(1:3); yticklabels([animals_all,{'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -1075,7 +1074,7 @@ for row=1:nDV
 
     h_img=imagesc(freq,1:3,phase_stack);
     set(gca,'YDir','normal','Color',[1 1 1]);
-    colormap(gca,cmap_circ); clim([-pi pi]);
+    colormap(gca,cmap_circ); caxis([-pi pi]);
     set(h_img,'AlphaData',~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all,{'Monkey avg'}]);
     xlabel('Frequency (Hz)'); title(coh_st_hm{row},'FontSize',9);
@@ -1096,7 +1095,7 @@ for row=1:nDV
 
     h_img=imagesc(freq,1:3,phase_stack);
     set(gca,'YDir','normal','Color',[1 1 1]);
-    colormap(gca,cmap_circ); clim([-pi pi]);
+    colormap(gca,cmap_circ); caxis([-pi pi]);
     set(h_img,'AlphaData',~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all,{'Monkey avg'}]);
     xlabel('Frequency (Hz)'); title(reg_st_hm{row},'FontSize',9);
@@ -1141,7 +1140,7 @@ for row=1:nDV
 
     h_img=imagesc(freq,1:3,phase_stack);
     set(gca,'YDir','normal','Color',[1 1 1]);
-    colormap(gca,cmap_circ); clim([-pi pi]);
+    colormap(gca,cmap_circ); caxis([-pi pi]);
     set(h_img,'AlphaData',~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all,{'Monkey avg'}]);
     xlabel('Frequency (Hz)'); title(coh_st_hm{row},'FontSize',9);
@@ -1162,7 +1161,7 @@ for row=1:nDV
 
     h_img=imagesc(freq,1:3,phase_stack);
     set(gca,'YDir','normal','Color',[1 1 1]);
-    colormap(gca,cmap_circ); clim([-pi pi]);
+    colormap(gca,cmap_circ); caxis([-pi pi]);
     set(h_img,'AlphaData',~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all,{'Monkey avg'}]);
     xlabel('Frequency (Hz)'); title(reg_st_hm{row},'FontSize',9);

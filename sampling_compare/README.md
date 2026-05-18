@@ -157,7 +157,9 @@ scripts wrote.
 |------------------------------------------------------|------------------|
 | `<hypothesis>/compare_all_measures*.m`               | One figure per hypothesis: coherence + correlation + regression panels for all 4 DVs (per-animal and monkey-average), with permutation thresholds shaded. |
 | `<hypothesis>/compare_preferred_phase*.m`            | Heatmaps of preferred phase (channels × frequency), polar histograms at top frequencies, pairwise circular correlation across DVs (per-animal and monkey-average). For H2 specifically, recomputes the preferred phase from `ph_all_sess.mat` because the saved H2 magnitudes don't carry direction. |
-| `compare_hypotheses.m` (top level)                   | Overlays H1, H2, H3 magnitude curves on the same axes per pipeline / DV / animal, plus the monkey-average. This is the figure that directly answers "where does the preferred phase vary?" by comparing significance across the nested hypotheses. |
+| `compare_hypotheses.m` (top level)                   | Overlays H1, H2, H3 magnitude curves on the same axes per pipeline / DV / animal, plus the monkey-average. This is the figure that directly answers "where does the preferred phase vary?" by comparing significance across the nested hypotheses. **Monkey-average scope only.** |
+| `compare_hypotheses_per_chan.m` (top level)          | Same paired Jensen-corrected H2−H1 test as `compare_hypotheses.m`, but applied at **per-animal channel-average** and **per-channel within each animal** levels. Produces a 4 DV × 4 metric channel-avg grid, a 4×4 grid of "# sig channels vs freq", and an 8×8 per-channel grid PDF per (pipeline × DV). |
+| `aggregate_regression_per_channel_nulls.m` (top level) | One-time aggregator. Consolidates the 1000 perm shards under `multi_lin_reg/<hyp>/cp10_till_100/perm_R[_pos]/<dv>/<ch>/perm_NNNN.mat` into a single `<ch>/per_channel_null.mat` per channel with fields `null_R2_phase` and `null_R_phase_mag`, so the per-channel regression paired test can do one load per channel instead of 1000. Idempotent (skips channels whose aggregate already exists). |
 
 ---
 
@@ -327,17 +329,60 @@ disagree, only that splitting was allowed. Paired differences are the
 only way to ask "did relaxing this level reveal signal beyond what
 relaxing alone buys you?".
 
+### Per-animal and per-channel variants of the paired test
+
+`compare_hypotheses.m` runs the paired Jensen-corrected H2 − H1 test
+**only at the monkey-average level** — it averages the per-perm null
+across channels and animals before testing. That's the right scope for
+"across the cortical population, do positions disagree on preferred
+phase?", but it can hide effects that exist only at a finer scope:
+
+- **Dilution.** If position-dependence is real in, say, 8 of 64 channels
+  and absent in the rest, the channel-mean H2 − H1 shrinks by ~8/64.
+  The Jensen-corrected null shrinks too, but a sparse signal can still
+  be buried.
+- **Channel cancellation.** H1 vector-sums per-channel resultants
+  (Way 1 across channels), so when channels prefer different phases the
+  pooled H1 collapses. H2 averages per-position magnitudes (Way 2
+  across channels) and doesn't cancel. Heterogeneity across channels
+  inflates the H2 − H1 gap at the population level even when no
+  individual channel has a clean position-disagreement.
+
+`compare_hypotheses_per_chan.m` applies the same paired test at two
+finer scopes, using only existing on-disk data — no new permutations:
+
+1. **Per-animal channel-average.** Reads each animal's existing
+   `channel_avg_results.mat` for H1 and H2 and runs the paired test on
+   the channel-mean nulls. Cheaper than re-aggregating across animals,
+   and lets you check whether one animal carries the population-level
+   signal disproportionately.
+2. **Per-channel within each animal.** Loads each channel's own H1 and
+   H2 per-perm null files (matched by the shared `rng(2025)` seed) and
+   runs the paired test channel by channel. The 8 × 8 grid output shows
+   which channels (if any) reject "shared phase across positions" at
+   the FWER-corrected level.
+
+The matched-perm requirement still holds at both scopes — the upstream
+pipelines all seed with `rng(2025)` before generating their perm
+indices, so perm `i` at H1 is the same trial shuffle as perm `i` at H2
+at every channel of every animal. The paired difference at any scope
+isolates real position-disagreement from the Jensen / flexibility
+advantage.
+
 ---
 
 ## File organisation
 
     sampling_compare/
-      complex/                  H1 comparison scripts
-      abs_per_pos/              H2 (H2+H4) comparison scripts
-      abs_per_pos_diff/         H3 comparison scripts
-      abs_per_chan/             H4 (H1+H4) comparison scripts
-      compare_hypotheses.m      Top-level overlay of H1/H2/H3 magnitudes
-      README.md                 this file
+      complex/                                      H1 comparison scripts
+      abs_per_pos/                                  H2 (H2+H4) comparison scripts
+      abs_per_pos_diff/                             H3 comparison scripts
+      abs_per_chan/                                 H4 (H1+H4) comparison scripts
+      compare_hypotheses.m                          Monkey-average overlay + paired test
+      compare_hypotheses_per_chan.m                 Per-animal + per-channel paired test
+      aggregate_regression_per_channel_nulls.m      One-time aggregator for regression
+                                                    per-channel paired test
+      README.md                                     this file
 
 Per-analysis results:
 
@@ -345,11 +390,13 @@ Per-analysis results:
       phase_coherence/{complex, abs_per_pos, abs_per_pos_diff, abs_per_chan}/cp10_till_100/...
       phase_correlation/{complex, abs_per_pos, abs_per_pos_diff, abs_per_chan}/cp10_till_100/...
       multi_lin_reg/{complex, abs_per_pos, abs_per_pos_diff, abs_per_chan}/cp10_till_100/...
-      multi_lin_reg/cp10_till_100/                                          shared input data
-                                                                            (ph_all_sess.mat,
-                                                                             frequency.mat) —
-                                                                            all compare scripts
-                                                                            load these from here
+        + perm_R[_pos]/<dv>/<ch>/per_channel_null.mat   produced by
+                                                        aggregate_regression_per_channel_nulls.m
+      multi_lin_reg/cp10_till_100/                  shared input data
+                                                    (ph_all_sess.mat,
+                                                     frequency.mat) —
+                                                    all compare scripts
+                                                    load these from here
 
     results_combined/
       phase_coherence/{complex, abs_per_pos, abs_per_pos_diff, abs_per_chan}/cp10_till_100/...   monkey averages
@@ -360,5 +407,9 @@ Per-analysis results:
       phase_coherence/{...}/{hermes,klecks,monkey_avg}/cp10_till_100/...
       phase_correlation/{...}/{hermes,klecks,monkey_avg}/cp10_till_100/...
       multi_lin_reg/{...}/{hermes,klecks,monkey_avg}/cp10_till_100/...
-      sampling_compare/                   per-hypothesis preferred-phase figures
-      sampling_compare/hypotheses/        H1/H2/H3 overlays from compare_hypotheses.m
+      sampling_compare/                             per-hypothesis preferred-phase figures
+      sampling_compare/hypotheses/monkey_avg/       monkey-avg H1/H2/H3 overlays
+                                                    from compare_hypotheses.m
+      sampling_compare/hypotheses/<animal>/         per-animal channel-avg + per-channel
+                                                    paired H2−H1 outputs from
+                                                    compare_hypotheses_per_chan.m

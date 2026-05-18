@@ -327,7 +327,7 @@ for row = 1:nDVs
     data_coh  = coh_phase.(key);
     h_img     = imagesc(freq, 1:nCh, data_coh);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  clim([-pi pi]);
+    colormap(gca, cmap_circ);  caxis([-pi pi]);
 
     alpha_coh = ones(nCh, nFreq) * nonsig_alpha;
     alpha_coh(coh_sig.(key)) = 1;
@@ -348,7 +348,7 @@ for row = 1:nDVs
         nR = size(data_reg, 1);  nF = size(data_reg, 2);
         h_img2 = imagesc(freqs_reg, 1:nR, data_reg);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ);  clim([-pi pi]);
+        colormap(gca, cmap_circ);  caxis([-pi pi]);
 
         alpha_reg = ones(nR, nF) * nonsig_alpha;
         alpha_reg(reg_sig.(key)(1:nR, 1:nF)) = 1;
@@ -943,7 +943,7 @@ for row = 1:nDVs
 
     h_img = imagesc(freq, 1:3, phase_stack);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  clim([-pi pi]);
+    colormap(gca, cmap_circ);  caxis([-pi pi]);
     set(h_img, 'AlphaData', alpha_stack);
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -995,7 +995,7 @@ for row = 1:nDVs
 
     h_img2 = imagesc(freqs_reg, 1:3, phase_stack_r); %check from here for the new significance
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  clim([-pi pi]);
+    colormap(gca, cmap_circ);  caxis([-pi pi]);
     set(h_img2, 'AlphaData', alpha_stack_r);
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -1157,7 +1157,7 @@ for a = 1:nAnimals
                     if sum(ok_reg) >= 6
                         X_h = [ones(sum(ok_reg),1), pup_h(ok_reg), mua_h(ok_reg), ...
                             amp_h(ok_reg), sin(ph_h(ok_reg)), cos(ph_h(ok_reg))];
-                        b_h = regress(dv_k_reg), X_h);
+                        b_h = regress(dv_h(ok_reg), X_h);
                         hit_reg_map(ch,f) = atan2(b_h(end-1), b_h(end));
                     end
                 end
@@ -1220,7 +1220,7 @@ for a = 1:nAnimals
         data = angle(hit_coh.(lbl));
         h_img = imagesc(freq, 1:a_nCh, data);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ);  clim([-pi pi]);
+        colormap(gca, cmap_circ);  caxis([-pi pi]);
         set(h_img, 'AlphaData', ~isnan(data));
         xlabel('Frequency (Hz)'); ylabel('Channel');
         title(coh_subtitles_hm{row}, 'FontSize', 9);
@@ -1234,7 +1234,7 @@ for a = 1:nAnimals
         data = hit_reg.(lbl);
         h_img = imagesc(freq, 1:a_nCh, data);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ);  clim([-pi pi]);
+        colormap(gca, cmap_circ);  caxis([-pi pi]);
         set(h_img, 'AlphaData', ~isnan(data));
         xlabel('Frequency (Hz)'); ylabel('Channel');
         title(reg_subtitles_hm{row}, 'FontSize', 9);
@@ -1267,7 +1267,7 @@ for a = 1:nAnimals
         data = angle(miss_coh.(lbl));
         h_img = imagesc(freq, 1:a_nCh, data);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ);  clim([-pi pi]);
+        colormap(gca, cmap_circ);  caxis([-pi pi]);
         set(h_img, 'AlphaData', ~isnan(data));
         xlabel('Frequency (Hz)'); ylabel('Channel');
         title(coh_subtitles_hm{row}, 'FontSize', 9);
@@ -1281,7 +1281,7 @@ for a = 1:nAnimals
         data = miss_reg.(lbl);
         h_img = imagesc(freq, 1:a_nCh, data);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ);  clim([-pi pi]);
+        colormap(gca, cmap_circ);  caxis([-pi pi]);
         set(h_img, 'AlphaData', ~isnan(data));
         xlabel('Frequency (Hz)'); ylabel('Channel');
         title(reg_subtitles_hm{row}, 'FontSize', 9);
@@ -1336,7 +1336,7 @@ for row = 1:nDV
 
     h_img = imagesc(freq, 1:3, phase_stack);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  clim([-pi pi]);
+    colormap(gca, cmap_circ);  caxis([-pi pi]);
     set(h_img, 'AlphaData', ~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -1364,7 +1364,7 @@ for row = 1:nDV
 
     h_img = imagesc(freq, 1:3, phase_stack);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  clim([-pi pi]);
+    colormap(gca, cmap_circ);  caxis([-pi pi]);
     set(h_img, 'AlphaData', ~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -1417,7 +1417,7 @@ for row = 1:nDV
 
     h_img = imagesc(freq, 1:3, phase_stack);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  clim([-pi pi]);
+    colormap(gca, cmap_circ);  caxis([-pi pi]);
     set(h_img, 'AlphaData', ~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');
@@ -1445,7 +1445,7 @@ for row = 1:nDV
 
     h_img = imagesc(freq, 1:3, phase_stack);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ);  clim([-pi pi]);
+    colormap(gca, cmap_circ);  caxis([-pi pi]);
     set(h_img, 'AlphaData', ~isnan(phase_stack));
     yticks(1:3); yticklabels([animals_all, {'Monkey avg'}]);
     xlabel('Frequency (Hz)');

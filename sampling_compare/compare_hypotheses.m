@@ -49,6 +49,10 @@
 %      Bar: n significant freqs per hypothesis (per-hypothesis test)
 %   6. compare_hypotheses_paired_nsig.pdf
 %      Bar: n significant freqs per pair (paired difference test)
+%   7. compare_hypotheses_paired_sig_pattern.pdf
+%      Significance heatmap (frequency x comparison), PAIRED test —
+%      same layout as figure 4 but for H_n - H_{n-1} exceeding the
+%      Jensen-adjusted max-stat threshold
 %
 % Pipelines compared (4 columns per figure):
 %   1. Coherence              — |mean(complex coherence)| / mean(|.|)
@@ -97,10 +101,33 @@ if ~exist(save_dir,'dir'), mkdir(save_dir); end
 
 hyp_keys   = {'complex','abs_per_pos','abs_per_pos_diff','abs_per_chan'};
 hyp_labels = {'H1 (pooled)','H2 (per pos)','H3 (per pos×diff)','H4 (per chan)'};
+hyp_short  = {'H1','H2','H3','H4'};
 hyp_colors = [0.20 0.40 0.80;
               0.20 0.65 0.40;
               0.80 0.30 0.30;
               0.70 0.40 0.80];
+
+% Toggle: H3 (abs_per_pos_diff) inclusion.
+%   'all'     — include H3 across all pipelines (default once regression
+%               permutations finish).
+%   'partial' — include H3 only where data already exists (coherence,
+%               correlation). Regression H3 files are skipped silently
+%               by the per-pipeline ~isfile() checks, so paired H3−H2
+%               panels stay blank for regression but appear for the
+%               others. Use this while regression perms are running.
+%   'none'    — drop H3 from every figure (clean H1/H2/H4-only view).
+H3_mode = 'partial';
+switch H3_mode
+    case 'none'
+        keep = ~strcmp(hyp_keys, 'abs_per_pos_diff');
+        hyp_keys   = hyp_keys(keep);
+        hyp_labels = hyp_labels(keep);
+        hyp_short  = hyp_short(keep);
+        hyp_colors = hyp_colors(keep,:);
+    case {'partial','all'}
+        % Keep H3 in hyp_keys; downstream file-existence checks handle
+        % missing pipelines gracefully.
+end
 nH = numel(hyp_keys);
 
 dv_labels   = {'MUA','LFP','RT','Hit/Miss'};
@@ -108,14 +135,28 @@ reg_dv_keys = {'MUA_ERP_ampl_all','LFP_ERP_ampl_all','RT','hit_miss'};
 % Regression appears twice: column 3 = partial R² (variance share),
 % column 4 = R_phase = |complex β| (tuning strength, directly analogous
 % to coherence/correlation magnitudes).
-pipe_labels = {'Coherence','Correlation','Regression R²','Regression R_phase'};
+pipe_labels = {'Coherence','Correlation','Regression R^2','Regression R_{phase}'};
 nDV = 4;  nP = 4;
 
-% Pairwise comparisons — one per axis being tested
-cmp_hi  = [2 3 4];  cmp_lo  = [1 2 1];
-cmp_lab = {'H2−H1 (position)','H3−H2 (difficulty)','H4−H1 (channel)'};
-cmp_col = [0.20 0.65 0.40; 0.80 0.30 0.30; 0.70 0.40 0.80];
-nC = 3;
+% Pairwise comparisons — defined by hypothesis keys so they survive the
+% include_H3 toggle. Any comparison whose endpoints aren't both present
+% is dropped silently.
+cmp_def = { ...
+    'abs_per_pos',      'complex',     'H2−H1 (position)',   'H2−H1', [0.20 0.65 0.40]; ...
+    'abs_per_pos_diff', 'abs_per_pos', 'H3−H2 (difficulty)', 'H3−H2', [0.80 0.30 0.30]; ...
+    'abs_per_chan',     'complex',     'H4−H1 (channel)',    'H4−H1', [0.70 0.40 0.80]};
+cmp_hi = []; cmp_lo = []; cmp_lab = {}; cmp_short = {}; cmp_col = zeros(0,3);
+for i = 1:size(cmp_def,1)
+    ih = find(strcmp(hyp_keys, cmp_def{i,1}), 1);
+    il = find(strcmp(hyp_keys, cmp_def{i,2}), 1);
+    if isempty(ih) || isempty(il), continue; end
+    cmp_hi(end+1)        = ih;       %#ok<SAGROW>
+    cmp_lo(end+1)        = il;       %#ok<SAGROW>
+    cmp_lab{end+1}       = cmp_def{i,3}; %#ok<SAGROW>
+    cmp_short{end+1}     = cmp_def{i,4}; %#ok<SAGROW>
+    cmp_col(end+1,:)     = cmp_def{i,5}; %#ok<SAGROW>
+end
+nC = numel(cmp_hi);
 
 %% Data loading (monkey-average only)
 % obs{p,h,d}   — observed curve [1 x nFreq]
@@ -408,7 +449,7 @@ for d = 1:nDV
             end
         end
         imagesc(1:nH, freq_axis, img);
-        set(ax4,'XTick',1:nH,'XTickLabel',{'H1','H2','H3','H4'}, ...
+        set(ax4,'XTick',1:nH,'XTickLabel',hyp_short, ...
             'XTickLabelRotation',30,'YDir','normal','FontSize',7);
         ylabel('Freq (Hz)','FontSize',7);
         if d==1, title(sprintf('%s — %s',pipe_labels{p},dv_labels{d}),'FontSize',8);
@@ -438,7 +479,7 @@ for d = 1:nDV
         vals = squeeze(n_sig(p,:,d));
         b = bar(1:nH, vals, 'FaceColor','flat');
         for h = 1:nH, b.CData(h,:) = hyp_colors(h,:); end
-        set(ax5,'XTick',1:nH,'XTickLabel',{'H1','H2','H3','H4'}, ...
+        set(ax5,'XTick',1:nH,'XTickLabel',hyp_short, ...
             'XTickLabelRotation',30,'FontSize',7);
         ylabel('n sig freqs','FontSize',7);
         if d==1, title(sprintf('%s — %s',pipe_labels{p},dv_labels{d}),'FontSize',8);
@@ -467,7 +508,7 @@ for d = 1:nDV
         vals = squeeze(n_sig_pair(p,:,d));
         b = bar(1:nC, vals, 'FaceColor','flat');
         for c = 1:nC, b.CData(c,:) = cmp_col(c,:); end
-        set(ax6,'XTick',1:nC,'XTickLabel',{'H2−H1','H3−H2','H4−H1'}, ...
+        set(ax6,'XTick',1:nC,'XTickLabel',cmp_short, ...
             'XTickLabelRotation',30,'FontSize',7);
         ylabel('n sig freqs','FontSize',7);
         if d==1, title(sprintf('%s — %s',pipe_labels{p},dv_labels{d}),'FontSize',8);
@@ -479,6 +520,42 @@ sgtitle({'N significant frequencies per paired comparison (monkey avg)', ...
     'FontSize',11,'FontWeight','bold');
 print(f6, fullfile(save_dir,'compare_hypotheses_paired_nsig.pdf'),'-dpdf');
 fprintf('Saved: %s\n', fullfile(save_dir,'compare_hypotheses_paired_nsig.pdf'));
+
+%% Figure 7: Paired-test significance pattern heatmap
+% Same idea as figure 4, but using the paired-difference test instead of
+% the per-hypothesis test. Cells coloured by comparison only where the
+% observed H_n - H_{n-1} exceeds the paired 95% max-stat threshold.
+f7 = figure('Name','Paired significance pattern — monkey avg', ...
+    'Units','centimeters','Position',[1 1 70 42]);
+set(f7,'PaperUnits','centimeters','PaperSize',[70 42],'PaperPosition',[0 0 70 42]);
+
+for d = 1:nDV
+    for p = 1:nP
+        ax7 = subplot(nDV,nP,(d-1)*nP+p);
+        img = ones(nFreq, nC, 3);   % white background
+        for c = 1:nC
+            sig = diff_sig{p,c,d};
+            if isempty(sig) || numel(sig) ~= nFreq, continue; end
+            mask = sig(:);
+            for ch = 1:3
+                col_ch = img(:,c,ch);
+                col_ch(mask) = cmp_col(c,ch);
+                img(:,c,ch) = col_ch;
+            end
+        end
+        imagesc(1:nC, freq_axis, img);
+        set(ax7,'XTick',1:nC,'XTickLabel',cmp_short, ...
+            'XTickLabelRotation',30,'YDir','normal','FontSize',7);
+        ylabel('Freq (Hz)','FontSize',7);
+        if d==1, title(sprintf('%s — %s',pipe_labels{p},dv_labels{d}),'FontSize',8);
+        else,    title(dv_labels{d},'FontSize',8); end
+    end
+end
+sgtitle({'Paired-test significance pattern (monkey avg)', ...
+    'coloured = observed H_n - H_{n-1} exceeds Jensen advantage (95% max-stat); white = not significant'}, ...
+    'FontSize',11,'FontWeight','bold');
+print(f7, fullfile(save_dir,'compare_hypotheses_paired_sig_pattern.pdf'),'-dpdf');
+fprintf('Saved: %s\n', fullfile(save_dir,'compare_hypotheses_paired_sig_pattern.pdf'));
 
 fprintf('\nAll figures saved to: %s\n', save_dir);
 

@@ -59,13 +59,13 @@ base_results = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' an
 coh_root  = fullfile(base_results, 'phase_coherence', 'abs_per_chan', 'cp10_till_100');
 reg_root  = fullfile(base_results, 'multi_lin_reg', 'abs_per_chan', 'cp10_till_100');
 corr_root = fullfile(base_results, 'phase_correlation', 'abs_per_chan', 'cp10_till_100');
-data_root = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');  % shared input data (ph_all_sess.mat)
+data_root = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');  % shared input data (frequency.mat, ph_all_sess.mat)
 
 save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/sampling_compare', animal);
 if ~exist(save_root, 'dir'), mkdir(save_root); end
 
 % Frequency axis (shared across coherence channels)
-load(fullfile(coh_root, 'frequency.mat'));
+load(fullfile(data_root, 'frequency.mat'));
 freq  = frequency;
 nFreq = numel(freq);
 nCh   = 64;
@@ -604,7 +604,7 @@ for a = 1:nAnimals
     a_reg_root  = fullfile(a_base, 'multi_lin_reg', 'abs_per_chan', 'cp10_till_100');
     a_data_root = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');  % shared input data
 
-    tmp_f   = load(fullfile(a_coh_root, 'frequency.mat'));
+    tmp_f   = load(fullfile(a_data_root, 'frequency.mat'));
     a_freq  = tmp_f.frequency;
     a_nFreq = numel(a_freq);
     a_nCh   = 64;
@@ -974,17 +974,16 @@ for a = 1:nAnimals
     animalName = animals_all{a};
     fprintf('\n=== Computing hit/miss preferred phase for %s ===\n', animalName);
 
-    a_base     = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
-    a_coh_root = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');
-    a_reg_root = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');
+    a_base      = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
+    a_data_root = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');   % shared input data
 
-    tmp_f   = load(fullfile(a_coh_root, 'frequency.mat'));
+    tmp_f   = load(fullfile(a_data_root, 'frequency.mat'));
     a_freq  = tmp_f.frequency;
     a_nFreq = numel(a_freq);
     a_nCh   = 64;
 
     % Load combined single-trial phase data
-    a_ph = load(fullfile(a_reg_root, 'ph_all_sess.mat'), 'ph_comb');
+    a_ph = load(fullfile(a_data_root, 'ph_all_sess.mat'), 'ph_comb');
     a_ph = a_ph.ph_comb;
     nTrials_phase = size(a_ph.phase_all, 1);
 

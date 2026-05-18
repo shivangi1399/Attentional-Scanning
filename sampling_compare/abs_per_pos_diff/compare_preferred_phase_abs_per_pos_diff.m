@@ -43,11 +43,12 @@ base_results = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' an
 coh_root  = fullfile(base_results, 'phase_coherence',   'abs_per_pos_diff', 'cp10_till_100');
 corr_root = fullfile(base_results, 'phase_correlation', 'abs_per_pos_diff', 'cp10_till_100');
 reg_root  = fullfile(base_results, 'multi_lin_reg',     'abs_per_pos_diff', 'cp10_till_100');
+data_root = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');   % shared input data (frequency.mat, ph_all_sess.mat)
 
 save_root = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi/Plots/sampling_compare_abs_per_pos_diff', animal);
 if ~exist(save_root, 'dir'), mkdir(save_root); end
 
-load(fullfile(coh_root, 'frequency.mat'));
+load(fullfile(data_root, 'frequency.mat'));
 freq  = frequency;
 nFreq = numel(freq);
 nCh   = 64;
@@ -56,8 +57,7 @@ nCh   = 64;
 
 fprintf('Computing coherence preferred phase for %s (H3)...\n', animal);
 
-data_load_folder = fullfile(base_results, 'multi_lin_reg', 'cp10_till_100');
-tmp_ph = load(fullfile(data_load_folder, 'ph_all_sess.mat'), 'ph_comb');
+tmp_ph = load(fullfile(data_root, 'ph_all_sess.mat'), 'ph_comb');
 a_ph   = tmp_ph.ph_comb;
 
 coh_phase      = struct();   % preferred phase per (ch, freq) for each measure
@@ -268,7 +268,7 @@ for row = 1:nDVs
     data_coh = coh_phase.(key);
     h_img    = imagesc(freq, 1:nCh, data_coh);
     set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-    colormap(gca, cmap_circ); clim([-pi pi]);
+    colormap(gca, cmap_circ); caxis([-pi pi]);
 
     alpha_coh = ones(nCh, nFreq) * nonsig_alpha;
     alpha_coh(coh_sig.(key)) = 1;
@@ -288,7 +288,7 @@ for row = 1:nDVs
         nR = size(data_reg,1); nF = size(data_reg,2);
         h_img2 = imagesc(freqs_reg, 1:nR, data_reg);
         set(gca, 'YDir', 'normal', 'Color', [1 1 1]);
-        colormap(gca, cmap_circ); clim([-pi pi]);
+        colormap(gca, cmap_circ); caxis([-pi pi]);
 
         alpha_reg = ones(nR, nF) * nonsig_alpha;
         alpha_reg(reg_sig.(key)(1:nR,1:nF)) = 1;
@@ -481,13 +481,13 @@ for a = 1:nAnimals
     fprintf('Loading %s for monkey-average...\n', animalName);
 
     a_base      = fullfile('/mnt/hpc/projects/MWSampling/4Shivangi', ['results_' animalName]);
-    a_data      = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');
+    a_data_root = fullfile(a_base, 'multi_lin_reg', 'cp10_till_100');   % shared input data
     a_reg_root  = fullfile(a_base, 'multi_lin_reg', 'abs_per_pos_diff', 'cp10_till_100');
     a_coh_root  = fullfile(a_base, 'phase_coherence',   'abs_per_pos_diff', 'cp10_till_100');
 
-    tmp_d  = load(fullfile(a_data, 'ph_all_sess.mat'), 'ph_comb');
+    tmp_d  = load(fullfile(a_data_root, 'ph_all_sess.mat'), 'ph_comb');
     a_phd  = tmp_d.ph_comb;
-    tmp_f  = load(fullfile(a_coh_root, 'frequency.mat'));
+    tmp_f  = load(fullfile(a_data_root, 'frequency.mat'));
     a_freq = tmp_f.frequency; a_nFreq = numel(a_freq); a_nCh = 64;
 
     a_coh_phase = struct();

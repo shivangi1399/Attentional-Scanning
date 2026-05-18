@@ -29,6 +29,13 @@ Phase coherence across channels and travelling wave analysis. Generates visualiz
 ### `multiple_linear_reg/`
 Multiple linear regression relating predictors (phase at critical time, MUA baseline, amplitude at critical time) to dependent variables (reaction time, MUA ERP, LFP ERP, hit/miss). Uses logistic regression for hit/miss classification. Permutation testing (1000 permutations) with max-stat thresholds for family-wise error rate control. Also includes reaction time computation via Engbert2003 saccade detection and pupil data processing.
 
+### `sampling_compare/`
+Cross-pipeline / cross-hypothesis framework that asks **at which levels (positions, difficulty bins, channels) the preferred phase is shared vs. varies**. Defines four hypotheses (H1, H2, H3, H1+H4) as "where in the pooling hierarchy is `abs()` taken" and tests them across the three independent metrics from `Phase_coherence/`, `Correlation_analysis/`, and `multiple_linear_reg/` (R² and R_phase).
+See `sampling_compare/README.md` for the full framework, the Way-1/Way-2 pooling rules, and the matched-permutation logic.
+
+### `scanning/`
+Phase-progression analysis: per-channel test of whether preferred phase changes **systematically** with stimulus position (peripheral → foveal). Computes the Mardia/Jupp circular-linear correlation `r_cl` between position index and the per-position preferred phase. `r_cl` is a narrow test — it only catches approximately-monotonic progression. For the broader "do positions disagree on preferred phase in any way?" question, see `sampling_compare/compare_hypotheses_per_chan.m` (paired H2 − H1).
+
 ### `RF_Mapping/`
 Receptive field mapping for V4 electrodes using high-gamma LFP power back-projected onto bar stimulus geometry.
 
