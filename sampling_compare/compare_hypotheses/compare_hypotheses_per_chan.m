@@ -48,6 +48,11 @@ nCh        = 64;
 base       = '/mnt/hpc/projects/MWSampling/4Shivangi';
 out_root   = fullfile(base, 'Plots','sampling_compare','hypotheses');
 
+% Toggle: after the main loop, also run comparing_monkeys.m which
+% recomputes hermes Reg R^2 LFP H2 with paired positions (16 -> 8 bins)
+% and plots merged-hermes vs unmerged-hermes vs klecks side by side.
+COMPARE_MERGED_HERMES_LFP_REG = false;
+
 % Color used for H2−H1 (positions). Matches compare_hypotheses.m green.
 COL_POS = [0.20 0.65 0.40];
 
@@ -56,6 +61,7 @@ nA = numel(animals); nP = numel(pipelines); nD = numel(dvs);
 %% Per-animal main loop
 ca_results       = cell(nA, nP, nD);
 nsig_ch_per_freq = cell(nA, nP, nD);
+pc_data          = cell(nA, nP, nD);
 freq_per_animal  = cell(nA, 1);
 
 for a = 1:nA
@@ -109,6 +115,8 @@ for a = 1:nA
             if isempty(freq_pc), freq_pc = freq; end
 
             nsig_ch_per_freq{a,p,d} = sum(pc_sig, 1, 'omitnan');
+            pc_data{a,p,d} = struct( ...
+                'obs', pc_obs, 'sig', pc_sig, 'freq', freq_pc);
 
             % 8×8 per-channel grid
             fig = fig_per_channel_grid( ...
@@ -131,6 +139,16 @@ for a = 1:nA
         fullfile(out_dir,'channel_avg_H2-H1.pdf'));
     fprintf('  Saved %s\n', fullfile(out_dir,'channel_avg_H2-H1.pdf'));
 
+    % Per-channel heatmap grid: 4 DV × 4 pipeline, each panel = channel × freq
+    % heatmap of obs H2-H1, with non-significant cells faded.
+    fig = fig_per_channel_heatmap_grid( ...
+        pc_data(a,:,:), pipe_label, dv_label, ...
+        sprintf('%s :: per-channel H2−H1 (channel × freq; faded = n.s.)', animalName));
+    save_pdf(fig, ...
+        fullfile(out_dir,'per_channel_heatmap.ps'), ...
+        fullfile(out_dir,'per_channel_heatmap.pdf'));
+    fprintf('  Saved %s\n', fullfile(out_dir,'per_channel_heatmap.pdf'));
+
     % N sig channels vs freq — all 4 pipelines (regression panels will
     % be empty unless aggregate_regression_per_channel_nulls.m has been
     % run first; fig_nsig_grid renders a "(no data)" placeholder for
@@ -142,9 +160,24 @@ for a = 1:nA
         fullfile(out_dir,'n_sig_channels_vs_freq.ps'), ...
         fullfile(out_dir,'n_sig_channels_vs_freq.pdf'));
     fprintf('  Saved %s\n', fullfile(out_dir,'n_sig_channels_vs_freq.pdf'));
+
+    % Diagnostics: usable channels per (pipeline × DV) and trial counts
+    % per (position × difficulty) per DV. Helps adjudicate whether across-
+    % monkey differences in sig clusters reflect biology vs. methodological
+    % asymmetries in channel attrition and trial counts.
+    diag_file = fullfile(out_dir, 'diagnostics.txt');
+    write_diagnostics(diag_file, animalName, dvs, pipe_label, dv_label, ...
+        squeeze(pc_data(a,:,:)), base);
+    fprintf('  Saved %s\n', diag_file);
 end
 
 fprintf('\nDone.\n');
+
+%% Optional: merged-positions comparison for hermes Reg R^2 LFP
+if COMPARE_MERGED_HERMES_LFP_REG
+    this_dir = fileparts(mfilename('fullpath'));
+    run(fullfile(this_dir, 'comparing_monkeys.m'));
+end
 
 %% ───────────────────────────────────────────────────────────────────────
 %% Local helpers
@@ -495,8 +528,10 @@ for d = 1:nD
             'DisplayName','obs H2−H1');
         plot(ax, S.freq, S.null_mean, '--','Color',col,'LineWidth',0.8, ...
             'DisplayName','null mean (Jensen)');
-        yline(ax, S.thr, ':','Color',col,'LineWidth',1, ...
-            'DisplayName','95% threshold');
+        if isfinite(S.thr)
+            yline(ax, S.thr, ':','Color',col,'LineWidth',1, ...
+                'DisplayName','95% threshold');
+        end
         yl = ylim(ax); span = yl(2)-yl(1);
         if any(S.sig)
             scatter(ax, S.freq(S.sig), repmat(yl(2)-0.05*span,1,sum(S.sig)), ...
@@ -532,6 +567,57 @@ for d = 1:nD
         if p == 1,  ylabel(ax,sprintf('%s\n# sig ch', dv_label{d}),'FontSize',7); end
         if d == 1, title(ax, pipe_label{p}, 'FontSize',8); end
         set(ax,'FontSize',6,'Box','on');
+    end
+end
+sgtitle(sgtitle_str, 'FontSize',10,'FontWeight','bold');
+end
+
+function fig = fig_per_channel_heatmap_grid(D, pipe_label, dv_label, sgtitle_str)
+% 4×4 grid of channel × freq heatmaps. Cells where the paired test was
+% not significant are rendered with reduced alpha so significant
+% (channel, freq) bins stand out without losing the underlying H2-H1
+% magnitudes.
+nP = numel(pipe_label); nD = numel(dv_label);
+fig = figure('Visible','off','Units','centimeters','Position',[1 1 36 24]);
+set(fig,'PaperUnits','centimeters','PaperSize',fig.Position(3:4), ...
+    'PaperPosition',[0 0 fig.Position(3:4)]);
+
+alpha_sig    = 1.0;
+alpha_nonsig = 0.20;
+
+for d = 1:nD
+    for p = 1:nP
+        ax = subplot(nD, nP, (d-1)*nP + p);
+        S = D{1, p, d};
+        if isempty(S) || ~isfield(S,'obs') || isempty(S.obs) ...
+                || isempty(S.freq)
+            title(ax, sprintf('%s — %s (no data)', pipe_label{p}, dv_label{d}), 'FontSize',7);
+            set(ax,'XTick',[],'YTick',[]); continue
+        end
+
+        nCh = size(S.obs, 1);
+        img = imagesc(ax, S.freq, 1:nCh, S.obs);
+        set(ax,'YDir','normal','Color',[1 1 1]);
+        colormap(ax, parula);
+
+        v = S.obs(~isnan(S.obs));
+        if ~isempty(v)
+            mx = max(abs(prctile(v,[2 98])));
+            if mx > 0, caxis(ax, [-mx mx]); end
+        end
+
+        A = alpha_nonsig * ones(size(S.obs));
+        if ~isempty(S.sig), A(S.sig) = alpha_sig; end
+        A(isnan(S.obs)) = 0;
+        set(img, 'AlphaData', A);
+
+        cb = colorbar(ax); cb.FontSize = 5;
+        if d == nD, xlabel(ax,'Freq (Hz)','FontSize',7); end
+        if p == 1,  ylabel(ax,sprintf('%s\nChannel', dv_label{d}),'FontSize',7); end
+        if d == 1,  title(ax, pipe_label{p}, 'FontSize',8); end
+        set(ax,'FontSize',6,'Box','on');
+        xlim(ax, [min(S.freq) max(S.freq)]);
+        ylim(ax, [0.5 nCh+0.5]);
     end
 end
 sgtitle(sgtitle_str, 'FontSize',10,'FontWeight','bold');
@@ -575,6 +661,120 @@ for ch = 1:nCh
     if ch <= (rows-1)*cols,  ax.XTickLabel = {}; end
 end
 sgtitle(sgtitle_str, 'FontSize',9, 'FontWeight','bold');
+end
+
+%% ── Diagnostics: usable channels + (pos × diff) trial counts ─────────
+function write_diagnostics(fname, animalName, dvs, pipe_label, dv_label, pc_data_animal, base)
+% pc_data_animal: nP × nD cell of structs with .obs (nCh × nFreq).
+% Writes two tables:
+%   (1) usable per-channel rows per (pipeline × DV) — a channel is
+%       counted as usable if any freq bin in its row is non-NaN.
+%   (2) trial counts per (position × difficulty bin) per DV, using the
+%       same within-position quantile binning the regression pipeline
+%       uses (nDiffBins = 4, col 18 = difficulty, col 16 = position).
+fid = fopen(fname, 'w');
+if fid < 0, return; end
+cleanup = onCleanup(@() fclose(fid));
+
+nP = numel(pipe_label); nD = numel(dv_label);
+
+fprintf(fid, '=== %s: usable per-channel rows in paired H2-H1 test ===\n', animalName);
+fprintf(fid, '(channel counted as usable if any freq bin has non-NaN obs)\n\n');
+fprintf(fid, '%-14s', 'pipeline\dv');
+for d = 1:nD, fprintf(fid, '%-12s', dv_label{d}); end
+fprintf(fid, '\n');
+for p = 1:nP
+    fprintf(fid, '%-14s', pipe_label{p});
+    for d = 1:nD
+        S = pc_data_animal{p, d};
+        if isempty(S) || ~isfield(S,'obs') || isempty(S.obs)
+            fprintf(fid, '%-12s', '—');
+        else
+            usable = sum(~all(isnan(S.obs), 2));
+            fprintf(fid, '%-12s', sprintf('%d/%d', usable, size(S.obs,1)));
+        end
+    end
+    fprintf(fid, '\n');
+end
+
+ph_file = fullfile(base, ['results_' animalName], ...
+    'multi_lin_reg','cp10_till_100','ph_all_sess.mat');
+if ~isfile(ph_file)
+    fprintf(fid, '\n(ph_all_sess.mat not found — skipping trial counts)\n');
+    return
+end
+S = load(ph_file, 'ph_comb');
+if ~isfield(S, 'ph_comb')
+    fprintf(fid, '\n(ph_comb not in ph_all_sess.mat — skipping trial counts)\n');
+    return
+end
+ph_comb   = S.ph_comb;
+nDiffBins = 4;
+
+dv_to_ti = containers.Map( ...
+    {'mua','lfp','RT','hit_miss'}, ...
+    {'MUA_ERP_trialinfo','LFP_ERP_trialinfo','RT_trialinfo','trialinfo'});
+
+fprintf(fid, '\n=== %s: trial counts per (position × difficulty bin) ===\n', animalName);
+fprintf(fid, '(difficulty col 18 binned into %d within-position quantiles)\n', nDiffBins);
+
+for d = 1:nD
+    field = dv_to_ti(dvs{d});
+    if ~isfield(ph_comb, field) || isempty(ph_comb.(field))
+        fprintf(fid, '\n-- %s: %s not in ph_comb --\n', dv_label{d}, field);
+        continue
+    end
+    ti = ph_comb.(field);
+    if size(ti,2) < 18
+        fprintf(fid, '\n-- %s: trialinfo has only %d cols, need >=18 --\n', ...
+            dv_label{d}, size(ti,2));
+        continue
+    end
+    pos       = ti(:,16);
+    diff_vals = ti(:,18);
+    positions = unique(pos(~isnan(pos)));
+    nPos      = numel(positions);
+    bin_idx   = bin_difficulty_inline(diff_vals, pos, positions, nDiffBins);
+
+    M = zeros(nPos, nDiffBins);
+    for ip = 1:nPos
+        for ib = 1:nDiffBins
+            M(ip, ib) = sum(pos == positions(ip) & bin_idx == ib);
+        end
+    end
+
+    fprintf(fid, '\n-- %s (n_trials = %d, n_pos = %d) --\n', ...
+        dv_label{d}, size(ti,1), nPos);
+    fprintf(fid, '%-8s', 'pos\bin');
+    for ib = 1:nDiffBins, fprintf(fid, '%-8s', sprintf('d%d', ib)); end
+    fprintf(fid, '%-8s\n', 'total');
+    for ip = 1:nPos
+        fprintf(fid, '%-8s', sprintf('p%g', positions(ip)));
+        for ib = 1:nDiffBins, fprintf(fid, '%-8d', M(ip, ib)); end
+        fprintf(fid, '%-8d\n', sum(M(ip,:)));
+    end
+    fprintf(fid, '%-8s', 'min');
+    for ib = 1:nDiffBins, fprintf(fid, '%-8d', min(M(:,ib))); end
+    fprintf(fid, '%-8d\n', min(sum(M,2)));
+end
+end
+
+function bin_idx = bin_difficulty_inline(diff_vals, pos_labels, positions, nDiffBins)
+% Inline copy of multiple_linear_reg/functions/bin_difficulty_per_pos.m so
+% this script does not depend on that path being added.
+bin_idx = nan(size(diff_vals));
+for p = 1:numel(positions)
+    pos_mask = pos_labels == positions(p);
+    de = diff_vals(pos_mask); valid = ~isnan(de);
+    if sum(valid) < nDiffBins, continue; end
+    edges      = quantile(de(valid), linspace(0, 1, nDiffBins + 1));
+    edges(1)   = -Inf;
+    edges(end) =  Inf;
+    [~,~,bin_local] = histcounts(de, edges);
+    bin_local(bin_local == 0) = NaN;
+    pos_idx = find(pos_mask);
+    bin_idx(pos_idx) = bin_local;
+end
 end
 
 function shade_sig(ax, freq, sig, yl, col)

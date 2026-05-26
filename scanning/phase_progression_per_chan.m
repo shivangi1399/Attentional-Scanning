@@ -151,7 +151,10 @@ for a = 1:numel(animals)
             'R_obs','R_null','p_val','positions','freq','n_pos','-v7.3');
 
         % ── Channel-average + per-channel significance summary ─────────
-        thresh_per_chan = quantile(R_null, 1-alpha, 3);   % nCh × nFreq
+        % Per-channel max-stat correction across frequencies:
+        % for each channel, take max across freq per perm → one threshold.
+        tmax_per_chan   = squeeze(max(R_null, [], 2));      % nCh × nPerm
+        thresh_per_chan = quantile(tmax_per_chan, 1-alpha, 2); % nCh × 1
 
         % Channel-average uses the same max-stat logic as the existing
         % coherence pipeline: average null curves across channels first,

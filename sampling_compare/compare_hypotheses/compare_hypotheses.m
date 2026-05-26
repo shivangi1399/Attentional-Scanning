@@ -116,7 +116,7 @@ hyp_colors = [0.20 0.40 0.80;
 %               panels stay blank for regression but appear for the
 %               others. Use this while regression perms are running.
 %   'none'    — drop H3 from every figure (clean H1/H2/H4-only view).
-H3_mode = 'partial';
+H3_mode = 'all';
 switch H3_mode
     case 'none'
         keep = ~strcmp(hyp_keys, 'abs_per_pos_diff');
@@ -302,7 +302,7 @@ for d = 1:nDV
             plot(freq_axis, v, 'Color',hyp_colors(h,:), 'LineWidth',2, ...
                 'DisplayName',hyp_labels{h});
             t = thr(p,h,d);
-            if ~isnan(t)
+            if isfinite(t)
                 yline(t,'--','Color',hyp_colors(h,:),'LineWidth',0.8, ...
                     'Alpha',0.7,'HandleVisibility','off');
             end
@@ -314,7 +314,7 @@ for d = 1:nDV
         yl = ylim; span = yl(2)-yl(1);
         for h = 1:nH
             v = obs{p,h,d}; t = thr(p,h,d);
-            if isempty(v)||isnan(t), continue; end
+            if isempty(v)||~isfinite(t), continue; end
             sig_f = freq_axis(v >= t);
             if ~isempty(sig_f)
                 scatter(sig_f, repmat(yl(2)-(h-1)*0.04*span, 1,numel(sig_f)), ...
@@ -366,7 +366,7 @@ for d = 1:nDV
             end
 
             % Threshold line
-            if ~isnan(t_d)
+            if isfinite(t_d)
                 yline(t_d,':','Color',cmp_col(c,:),'LineWidth',1, ...
                     'HandleVisibility','off');
             end
@@ -440,7 +440,7 @@ for d = 1:nDV
         img = ones(nFreq, nH, 3);   % white background
         for h = 1:nH
             v = obs{p,h,d}; t = thr(p,h,d);
-            if isempty(v)||isnan(t)||numel(v)~=nFreq, continue; end
+            if isempty(v)||~isfinite(t)||numel(v)~=nFreq, continue; end
             mask = v(:) >= t;
             for ch = 1:3
                 col_ch = img(:,h,ch);
@@ -466,7 +466,7 @@ fprintf('Saved: %s\n', fullfile(save_dir,'compare_hypotheses_sig_pattern.pdf'));
 n_sig = zeros(nP,nH,nDV);
 for p = 1:nP; for h = 1:nH; for d = 1:nDV
     v = obs{p,h,d}; t = thr(p,h,d);
-    if ~isempty(v)&&~isnan(t), n_sig(p,h,d) = sum(v>=t); end
+    if ~isempty(v)&&isfinite(t), n_sig(p,h,d) = sum(v>=t); end
 end; end; end
 
 f5 = figure('Name','N sig frequencies per hypothesis', ...
@@ -574,7 +574,7 @@ end
 
 function do_shade(freq_axis, val, thr, col)
 % Shade frequency regions where val >= thr with semi-transparent fill.
-if isempty(val)||isnan(thr)||numel(val)~=numel(freq_axis), return; end
+if isempty(val)||~isfinite(thr)||numel(val)~=numel(freq_axis), return; end
 sig = val(:)' >= thr;
 if ~any(sig), return; end
 yl = ylim;
