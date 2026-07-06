@@ -11,6 +11,10 @@ function out = phase_progression_chan(cfg_fun)
 %   infile  — folder containing ph_all_sess.mat
 %   outfile — folder where a <ichan>/ subdir will be created
 %   seed    — RNG seed for this channel (per-channel reproducibility)
+%   perm_seed_base — (optional) base seed for the SYNCHRONISED permutation
+%                    null; perm k is seeded rng(perm_seed_base + k) in EVERY
+%                    channel so the channel-average null keeps cross-channel
+%                    dependence. Default 2025 (matches regress_perm_R_pos.m).
 %
 % Saves <outfile>/<ichan>/phase_progression_chan.mat with:
 %   R_obs (1×nFreq), R_null (nFreq×nPerm), pref_phase (nFreq×nPos),
@@ -23,6 +27,8 @@ dv      = cfg_fun.dv;
 infile  = cfg_fun.infile;
 outfile = cfg_fun.outfile;
 seed    = cfg_fun.seed;
+if isfield(cfg_fun,'perm_seed_base'), perm_seed_base = cfg_fun.perm_seed_base;
+else,                                 perm_seed_base = 2025; end
 
 rng(seed);
 
@@ -74,8 +80,25 @@ if nPos >= 2 && sum(valid) >= 2*nPos
     step_phase = dphi_o;
     mean_step  = mstep_o;
 
+    % --- Synchronised permutation null (matches the sampling pipeline) ---
+    % Seed each shuffle by the PERMUTATION INDEX (not the channel) and apply
+    % the SAME position-label relabelling to every channel. base_trials and
+    % base_labels are identical across channels for a given DV, and the RNG
+    % is seeded by perm index, so perm k is the same trial->position
+    % reassignment in every channel. Averaging this null across channels
+    % therefore preserves the spatial (cross-channel) dependence of the
+    % array LFP. Without this — i.e. shuffling each channel independently —
+    % the channel-average null is far too tight (its spread shrinks like
+    % 1/sqrt(nCh) assuming channel independence, which is false for array
+    % LFP) and the channel-average significance is anti-conservative.
+    % (cf. multiple_linear_reg/functions/regress_perm_R_pos.m: rng(2025+perm_idx).)
+    base_trials = find(pos_idx_all > 0);     % identical across channels for this DV
+    base_labels = pos_idx_all(base_trials);
     for k = 1:nPerm
-        pos_k = pos_v(randperm(numel(pos_v)));
+        rng(perm_seed_base + k);             % SHARED across channels
+        pos_perm              = zeros(nTrials, 1);
+        pos_perm(base_trials) = base_labels(randperm(numel(base_labels)));
+        pos_k                 = pos_perm(valid);   % valid is a subset of base_trials -> labels in 1..nPos
         R_null(:, k) = local_systematicity(weight, pos_k, nPos).';
     end
 

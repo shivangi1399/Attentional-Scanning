@@ -101,14 +101,20 @@ for a = 1:numel(animals)
         if ~exist(dv_dir,'dir'), mkdir(dv_dir); end
 
         % ── Submit one SLURM job per channel ──────────────────────────
+        % NOTE: seed is per-channel (only affects nothing random in the
+        % observed stat), but perm_seed_base is SHARED so the permutation
+        % null is synchronised across channels — see phase_progression_chan.m.
+        % This is what makes the channel-average (and monkey-average) null
+        % below statistically valid for spatially-correlated array LFP.
         cfg = cell(1, nCh);
         for ch = 1:nCh
-            cfg{ch}.ichan   = ch;
-            cfg{ch}.nPerm   = nPerm;
-            cfg{ch}.dv      = dv;
-            cfg{ch}.infile  = data_load_folder;
-            cfg{ch}.outfile = dv_dir;
-            cfg{ch}.seed    = 2025 + ch;
+            cfg{ch}.ichan          = ch;
+            cfg{ch}.nPerm          = nPerm;
+            cfg{ch}.dv             = dv;
+            cfg{ch}.infile         = data_load_folder;
+            cfg{ch}.outfile        = dv_dir;
+            cfg{ch}.seed           = 2025 + ch;
+            cfg{ch}.perm_seed_base = 2025;      % SHARED across channels (synchronised null)
         end
 
         slurmfun(@phase_progression_chan, cfg, ...
@@ -156,9 +162,14 @@ for a = 1:numel(animals)
         tmax_per_chan   = squeeze(max(R_null, [], 2));      % nCh × nPerm
         thresh_per_chan = quantile(tmax_per_chan, 1-alpha, 2); % nCh × 1
 
-        % Channel-average uses the same max-stat logic as the existing
-        % coherence pipeline: average null curves across channels first,
-        % then take the freq-wise max for a single threshold.
+        % Channel-average null: average the per-channel null curves across
+        % channels PER PERMUTATION INDEX, then take the freq-wise max for a
+        % single max-stat threshold. Because the per-channel permutations are
+        % SYNCHRONISED (same relabelling per perm index across channels; see
+        % phase_progression_chan.m), this average preserves the cross-channel
+        % dependence of the array LFP, so the threshold is honest rather than
+        % artificially low. Mirrors null_avg_R_phase_freq in the sampling
+        % pipeline (regress_stats_R2_abs_per_pos.m).
         R_null_chan_avg = mean(R_null, 1, 'omitnan');     % 1 × nFreq × nPerm
         R_null_chan_avg = squeeze(R_null_chan_avg);       % nFreq × nPerm
         R_obs_chan_avg  = mean(R_obs, 1, 'omitnan');      % 1 × nFreq
