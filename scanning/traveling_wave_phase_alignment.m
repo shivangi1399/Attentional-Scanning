@@ -3,10 +3,10 @@
 % locations, swept over frequency × speed ("rotate-to-overlap"
 % test).
 %
-% Idea (see image.png): each stimulus location p has a preferred-phase
-% vector e^{iφ(p)}. If processing scans the locations as a TRAVELING WAVE
-% of speed v, then the phase at each location is delayed relative to a
-% reference by Δt(p) = d(p)/v, i.e. rotated by
+% Idea : each stimulus location p has a preferred-phase vector e^{iφ(p)}. 
+% If processing scans the locations as a TRAVELING WAVE of speed v, then 
+% the phase at each location is delayed relative to a reference by 
+% Δt(p) = d(p)/v, i.e. rotated by
 %       θ(p) = 2π f d(p) / v .
 % De-rotating each vector by θ(p) should make all locations OVERLAP
 % (resultant R → 1) — but only at the wave's true (f, v). So we sweep a
