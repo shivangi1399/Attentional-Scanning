@@ -35,6 +35,7 @@ See `sampling_compare/README.md` for the full framework, the Way-1/Way-2 pooling
 
 ### `scanning/`
 phase_progression : per-channel test of whether preferred phase changes **systematically** with stimulus position (peripheral → foveal). Computes the Mardia/Jupp circular-linear correlation `r_cl` between position index and the per-position preferred phase. 
+
 stimulus_loc_traveling_wave and cortical_planar_wave : they check if there is a traveling wave across the stimulus locations and across the recording grid on the cortex respectively. 
 
 ### `RF_Mapping/`
