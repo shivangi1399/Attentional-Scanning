@@ -3,8 +3,7 @@ Elena/
 eye_data/
 Compare_methods/
 masters_code/
-Phase_coherence/using_absolute
-Correlation_analysis/using_absolute
+scanning/traveling_wave_H2_H1.m
 
 # Binary/data files
 *.mat

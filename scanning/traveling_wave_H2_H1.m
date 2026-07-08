@@ -5,7 +5,7 @@
 % is consistent with a traveling wave propagating across cortex, and
 % characterizes the spatial structure of the phase pattern. H2-H1 significance
 % threholds are used here, its' just better to use coherence significances. 
-% Look at wave_type_classification.m and traveling_planar_wave.m instead. 
+% Look at cortical_wave_type_classification.m and cortical_planar_wave.m instead. 
 %
 % Runs for each (animal x DV) combination. Controlled by CH_FILTER:
 %   'all'      -- all 64 channels

@@ -34,7 +34,8 @@ Cross-pipeline / cross-hypothesis framework that asks **at which levels (positio
 See `sampling_compare/README.md` for the full framework, the Way-1/Way-2 pooling rules, and the matched-permutation logic.
 
 ### `scanning/`
-Phase-progression analysis: per-channel test of whether preferred phase changes **systematically** with stimulus position (peripheral → foveal). Computes the Mardia/Jupp circular-linear correlation `r_cl` between position index and the per-position preferred phase. `r_cl` is a narrow test — it only catches approximately-monotonic progression. For the broader "do positions disagree on preferred phase in any way?" question, see `sampling_compare/compare_hypotheses_per_chan.m` (paired H2 − H1).
+phase_progression : per-channel test of whether preferred phase changes **systematically** with stimulus position (peripheral → foveal). Computes the Mardia/Jupp circular-linear correlation `r_cl` between position index and the per-position preferred phase. 
+stimulus_loc_traveling_wave and cortical_planar_wave : they check if there is a traveling wave across the stimulus locations and across the recording grid on the cortex respectively. 
 
 ### `RF_Mapping/`
 Receptive field mapping for V4 electrodes using high-gamma LFP power back-projected onto bar stimulus geometry.
