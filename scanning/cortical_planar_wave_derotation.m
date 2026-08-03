@@ -63,7 +63,58 @@
 %       planar_wave_derotation.mat
 % =====================================================================
 
+% =====================================================================
+% TWO ESTIMATORS (setting: ESTIMATOR = 'phase' | 'trial')
+% =====================================================================
+% Both build the same object — one complex number per (electrode, frequency),
+% whose phase is that electrode's preferred phase and whose magnitude says how
+% reliable it is — and then run the identical de-rotation, null, gain and
+% pooling machinery. They differ only in HOW that number is formed:
+%
+%   'phase' (default, unchanged): collapse the per-location coherences from
+%       phase_progression.mat with a magnitude-weighted circular sum,
+%           z_c(f) = SUM_p coh_mag(c,p,f) * exp(i*pref_phase(c,p,f)) .
+%       Each term is a per-location MEAN over trials, so a location with few
+%       trials contributes a term whose magnitude is inflated (|c_p| ~ 1/sqrt(n_p)).
+%
+%   'trial': one phase coherence over ALL trials, in the phase_coherence/ sense,
+%           z_c(f) = ( 1/W_c ) * SUM over all trials  y_t * exp(i*phi_tf) ,
+%           W_c = SUM_t |y_t| ,
+%       so |z_c| is that channel's overall coherence and every trial counts once.
+%       Computed from the cached per-location sums S(c,p,f) that
+%       functions/trial_position_sums_chan.m writes (one SLURM job per channel),
+%       via z_c(f) = SUM_p S(c,p,f) / W_c.
+%
+%   NOTE this script only needs the OBSERVED sums: its null shuffles the
+%   electrode <-> array-coordinate assignment, not trial labels, so the
+%   permutation part of the cached worker output is not used here (~0.3 MB per
+%   animal rather than the ~286 MB the stimulus-location script needs).
+%   The cache is shared with stimulus_loc_traveling_wave.m.
+%
+% =====================================================================
+% COMBINING ANIMALS: replication AND pooled standardised z
+% =====================================================================
+%   REPLICATION (primary): sig in BOTH animals, cell by cell. Cannot be driven
+%     by one animal; cannot aggregate weak evidence; low power.
+%   POOLED (secondary): z-score each animal's grid against its OWN permutation
+%     null, average the z's, and test that against a paired-permutation
+%     max-stat null. Aggregates evidence, so more power — but with two animals
+%     a pooled hit can be ~100% one animal, so the per-animal z at the peak
+%     cell is printed alongside.
+%   Standardising first is essential: the animals sit on very different scales
+%   (R0 ~0.95 vs ~0.99 here), so a raw average would just track the larger one.
+%   ONE pooled statistic is reported, not two: because gain = R - R0(f) and R0
+%   is constant across speed and across permutations within a frequency, the
+%   constant cancels in both the numerator and the null, so the standardised
+%   gain grid is IDENTICAL to the standardised R grid. Verified numerically.
+%   Hence the pooled column appears once, on the R figure.
+% =====================================================================
+
 clearvars; close all; clc
+
+%% ─── Dependencies (only the 'trial' estimator needs slurmfun) ────────
+addpath /opt/ESIsoftware/matlab/slurmfun/
+addpath /mnt/hpc/projects/MWSampling/4Shivangi/code/scanning/functions
 
 %% ─── Settings ────────────────────────────────────────────────────────
 animals    = {'hermes','klecks'};
@@ -83,6 +134,17 @@ NTHETA     = 24;                  % # propagation-direction steps (15° each)
 THETA      = linspace(0, 2*pi, NTHETA+1); THETA(end) = [];
 SPEED_OK   = [5 100];             % plausible cortical wave speed (cm/s), for flagging
 rng(2025);
+
+% Which estimator forms the per-electrode complex map (see header).
+% 'phase' = collapse the per-location coherences (original, unchanged).
+% 'trial' = one phase coherence over all trials; needs the cached SLURM sums.
+ESTIMATOR = 'phase';
+RECOMPUTE_TRIAL_SUMS = false;     % force re-submission of the per-channel jobs
+switch ESTIMATOR
+    case 'phase', tag = '';        est_note = 'estimator: phase (per-location preferred phases)';
+    case 'trial', tag = '_trial';  est_note = 'estimator: trial (phase coherence over all trials)';
+    otherwise,    error('Unknown ESTIMATOR: %s', ESTIMATOR);
+end
 
 out_dir = fullfile(base,'Plots','scanning','planar_wave_derotation','cp10_till_100', dv);
 res_dir = fullfile(base,'results_combined','scanning','planar_wave_derotation','cp10_till_100', dv);
@@ -121,8 +183,27 @@ for ia = 1:numel(animals)
     fHz   = freq(f_use);
     Vs_mm = V_CORTICAL * 10;                 % cm/s -> mm/s (k = 2*pi*f / v_mm)
 
-    [Robs, R0, Rnull_max, Gnull_max, DIRbest] = derotate_grid( ...
-        S.pref_phase, S.coh_mag, coh_sig, f_use, fHz, XY(1:nCh,:), Vs_mm, THETA, MIN_CH, nPerm);
+    % ── Per-electrode complex map Zmap(ch,freq): the only thing the two
+    %    estimators do differently (see header) ─────────────────────────
+    switch ESTIMATOR
+        case 'phase'
+            Zmap = complex(nan(nCh, nFreq));
+            for f = 1:nFreq
+                PHI = squeeze(S.pref_phase(:,f,:));  W = squeeze(S.coh_mag(:,f,:));
+                M = isfinite(PHI) & isfinite(W) & (W > 0);  W(~M) = 0; PHI(~M) = 0;
+                Zmap(:,f) = sum(W .* exp(1i*PHI), 2);      % magnitude-weighted circular sum
+            end
+        case 'trial'
+            % z_c(f) = SUM_p S(c,p,f) / W_c = coherence over ALL trials.
+            % Only the observed sums are needed; the null here is spatial.
+            [Ssum, Wch] = get_trial_sums_obs(base, animalName, dv, nCh, nPerm, RECOMPUTE_TRIAL_SUMS);
+            Zmap = squeeze(sum(Ssum, 2)) ./ Wch;           % nCh × nFreq
+            fprintf('  trial estimator: |z| range %.3f–%.3f (per-channel coherence)\n', ...
+                min(abs(Zmap(:)),[],'omitnan'), max(abs(Zmap(:)),[],'omitnan'));
+    end
+
+    [Robs, R0, Rnull_max, Gnull_max, DIRbest, Rnull, Gnull] = derotate_grid( ...
+        Zmap, coh_sig, f_use, fHz, XY(1:nCh,:), Vs_mm, THETA, MIN_CH, nPerm);
 
     % (1) absolute R: max-stat threshold over the whole (f,v,θ) grid
     thr = quantile(Rnull_max, 1-alpha);
@@ -146,6 +227,16 @@ for ia = 1:numel(animals)
     G(ia).fHz = fHz; G(ia).speeds = V_CORTICAL; G(ia).DIRbest = DIRbest;
     G(ia).vbest = vbest_speed; G(ia).vbest_dir = vbest_dir; G(ia).vbest_sig = vbest_sig;
 
+    % ── Standardise against this animal's OWN null, cell by cell ─────────
+    % 'omitnan' matters: mean/std do NOT skip NaN, so one NaN permutation would
+    % make that cell NaN for every permutation and the NaN would then spread
+    % through the cross-animal sum (NaN + finite = NaN).
+    mu = mean(Rnull,3,'omitnan');  sd = std(Rnull,0,3,'omitnan');
+    G(ia).z_obs  = (Robs  - mu) ./ max(sd, eps);
+    G(ia).z_null = (Rnull - mu) ./ max(sd, eps);
+    fprintf('  finite cells in standardised grid = %d/%d\n', ...
+        sum(isfinite(G(ia).z_obs(:))), numel(G(ia).z_obs));
+
     [rmax,ix] = max(Robs(:)); [fi,vi] = ind2sub(size(Robs), ix);
     fprintf('  peak R=%.3f at f=%.1f Hz, v=%.1f cm/s, dir=%.0f° | thr=%.3f | sig cells=%d\n', ...
         rmax, fHz(fi), V_CORTICAL(vi), rad2deg(DIRbest(fi,vi)), thr, sum(sig(:)));
@@ -158,27 +249,55 @@ end
 valid = find(arrayfun(@(s) ~isempty(s.animal), G));
 
 %% ─── Combine animals (mean grid + replication) ───────────────────────
-Rsum = 0; Gsum = 0;
+Rsum = 0; Gsum = 0; Zsum = 0; Znull = 0;
 repl = true(size(G(valid(1)).R)); repl_gain = repl;
 for ia = valid
     Rsum = Rsum + G(ia).R;
     Gsum = Gsum + G(ia).gain;
     repl = repl & G(ia).sig;
     repl_gain = repl_gain & G(ia).sig_gain;
+    Zsum  = Zsum  + G(ia).z_obs;
+    Znull = Znull + G(ia).z_null;
 end
-C.R = Rsum/numel(valid); C.repl = repl;
-C.gain = Gsum/numel(valid); C.repl_gain = repl_gain;
+nA = numel(valid);
+C.R = Rsum/nA; C.repl = repl;
+C.gain = Gsum/nA; C.repl_gain = repl_gain;
 C.fHz = G(valid(1)).fHz; C.speeds = V_CORTICAL;
+
+% POOLED standardised test. Permutation b of one animal is paired with
+% permutation b of the other — legitimate because the animals are independent,
+% so the pairing is arbitrary and samples the product null. max() omits NaN per
+% column, so skipped frequencies are harmless; an all-NaN null (no usable
+% channels anywhere) is caught explicitly rather than yielding thr = NaN.
+C.Z  = Zsum/nA;
+maxZ = max(reshape(Znull/nA, [], nPerm), [], 1).';
+tZ   = quantile(maxZ, 1-alpha);
+if ~isfinite(tZ)
+    warning(['pooled null is entirely NaN — at least one animal produced no finite ' ...
+             'cells (too few usable channels?). Pooled test disabled; replication unaffected.']);
+    tZ = Inf;
+end
+C.thr_pool = tZ;  C.sig_pool = C.Z >= tZ;  C.pooled_ok = isfinite(tZ);
 
 fprintf('\n================ COMBINED ================\n');
 fprintf('cells significant in BOTH animals (absolute R)      = %d\n', sum(repl(:)));
 fprintf('cells gain-significant in BOTH animals (increase-R)  = %d\n', sum(repl_gain(:)));
+fprintf('cells significant in the POOLED standardised test    = %d (thr z = %.2f)\n', ...
+    sum(C.sig_pool(:)), C.thr_pool);
+if any(C.sig_pool(:))
+    [~, ix] = max(C.Z(:) .* double(C.sig_pool(:)));
+    [pf, pv] = ind2sub(size(C.Z), ix);
+    za = arrayfun(@(ia) G(ia).z_obs(pf,pv), valid);
+    fprintf('  peak pooled cell f=%.2f Hz v=%.1f cm/s: per-animal z = [%s] (%s)\n', ...
+        C.fHz(pf), C.speeds(pv), strjoin(compose('%.2f', za), ', '), strjoin({G(valid).animal}, ', '));
+end
 
 %% ─── Figure 1: freq × speed ABSOLUTE R heatmaps ──────────────────────
 % R maxed over direction; significant cells outlined. A wave = high R along a
 % (near-)constant speed across frequencies.
-ncol = numel(valid)+1;
-f1 = figure('Visible','off','Position',[40 40 360*ncol 320]);
+esc  = @(s) strrep(s, '_', '\_');   % TeX renders '_' as a subscript otherwise
+ncol = numel(valid)+2;              % animals + mean/replication + pooled z
+f1 = figure('Visible','off','Position',[40 40 380*ncol 340]);
 for k = 1:numel(valid)
     ia = valid(k);
     ax = subplot(1, ncol, k); hold(ax,'on');
@@ -190,17 +309,35 @@ for k = 1:numel(valid)
     xlabel(ax,'Frequency (Hz)'); ylabel(ax,'wave speed (cm/s)');
     title(ax,sprintf('%s — R (sig outlined)', G(ia).animal),'FontSize',9);
 end
-ax = subplot(1, ncol, ncol); hold(ax,'on');
+ax = subplot(1, ncol, ncol-1); hold(ax,'on');
 imagesc(ax, C.fHz, 1:numel(C.speeds), C.R.');
 set(ax,'YDir','normal'); axis(ax,'tight');
 contour(ax, C.fHz, 1:numel(C.speeds), double(C.repl.'), [0.5 0.5], 'w','LineWidth',1.4);
 speed_yticks(ax, C.speeds, SPEED_OK);
 caxis(ax,[0 1]); colorbar(ax);
 xlabel(ax,'Frequency (Hz)'); ylabel(ax,'wave speed (cm/s)');
-title(ax,'mean (repl. outlined)','FontSize',9);
-sgtitle('Cortical planar-wave de-rotation grid: R after de-rotating electrodes by k\cdot d(\theta)','FontSize',11);
+title(ax, {'mean', 'contour = replication'},'FontSize',9);
+
+% POOLED standardised z. Units are z, NOT R — auto-scaled, so its colours are
+% not comparable with the panels to the left. One pooled panel only: the
+% standardised gain grid is identical to this one (see header).
+ax = subplot(1, ncol, ncol); hold(ax,'on');
+imagesc(ax, C.fHz, 1:numel(C.speeds), C.Z.');
+set(ax,'YDir','normal'); axis(ax,'tight');
+contour(ax, C.fHz, 1:numel(C.speeds), double(C.sig_pool.'), [0.5 0.5], 'w','LineWidth',1.4);
+speed_yticks(ax, C.speeds, SPEED_OK);
+if ~any(isfinite(C.Z(:))), caxis(ax,[0 1]); end
+colorbar(ax);
+xlabel(ax,'Frequency (Hz)'); ylabel(ax,'wave speed (cm/s)');
+if C.pooled_ok, ttl_p = sprintf('POOLED z (thr %.2f)', C.thr_pool);
+else,           ttl_p = 'POOLED z - n/a (see warning)'; end
+title(ax, {'pooled standardised', ttl_p},'FontSize',9);
+
+sgtitle({['Cortical planar-wave de-rotation grid: R after de-rotating electrodes by k*d(theta)   (' esc(est_note) ')'], ...
+         'white contour = significant   |   col 3 = mean, contour = replication   |   col 4 = pooled standardised z'}, ...
+         'FontSize',9);
 set(f1,'PaperPositionMode','auto'); pos=get(f1,'Position'); set(f1,'PaperUnits','points','PaperSize',pos(3:4));
-saveas(f1, fullfile(out_dir,'derotation_R_grids.pdf'));
+saveas(f1, fullfile(out_dir, ['derotation_R_grids' tag '.pdf']));
 
 %% ─── Figure 2: INCREASE IN COHERENCE (de-rotation gain) dR ───────────
 % dR(f,v)=R(f,v)-R0(f): speeds at which de-rotating BEATS no rotation. A wave
@@ -208,10 +345,11 @@ saveas(f1, fullfile(out_dir,'derotation_R_grids.pdf'));
 % (black line) across frequencies.
 gmax_m = max(C.gain(:));
 for ia = valid, gmax_m = max(gmax_m, max(G(ia).gain(:))); end
-f2 = figure('Visible','off','Position',[40 40 360*ncol 320]);
+ncol_g = numel(valid)+1;    % animals + mean; the pooled panel lives on figure 1 only
+f2 = figure('Visible','off','Position',[40 40 380*ncol_g 340]);
 for k = 1:numel(valid)
     ia = valid(k);
-    ax = subplot(1, ncol, k); hold(ax,'on');
+    ax = subplot(1, ncol_g, k); hold(ax,'on');
     imagesc(ax, G(ia).fHz, 1:numel(G(ia).speeds), G(ia).gain.');
     set(ax,'YDir','normal'); axis(ax,'tight');
     contour(ax, G(ia).fHz, 1:numel(G(ia).speeds), double(G(ia).sig_gain.'), [0.5 0.5], 'w','LineWidth',1.2);
@@ -219,19 +357,21 @@ for k = 1:numel(valid)
     speed_yticks(ax, G(ia).speeds, SPEED_OK);
     caxis(ax,[0 max(gmax_m,eps)]); colorbar(ax);
     xlabel(ax,'Frequency (Hz)'); ylabel(ax,'wave speed (cm/s)');
-    title(ax,sprintf('%s — gain \\DeltaR (sig outlined, best-v line)', G(ia).animal),'FontSize',9);
+    title(ax, {G(ia).animal, 'gain dR'},'FontSize',9);
 end
-ax = subplot(1, ncol, ncol); hold(ax,'on');
+ax = subplot(1, ncol_g, ncol_g); hold(ax,'on');
 imagesc(ax, C.fHz, 1:numel(C.speeds), C.gain.');
 set(ax,'YDir','normal'); axis(ax,'tight');
 contour(ax, C.fHz, 1:numel(C.speeds), double(C.repl_gain.'), [0.5 0.5], 'w','LineWidth',1.4);
 speed_yticks(ax, C.speeds, SPEED_OK);
 caxis(ax,[0 max(gmax_m,eps)]); colorbar(ax);
 xlabel(ax,'Frequency (Hz)'); ylabel(ax,'wave speed (cm/s)');
-title(ax,'mean gain (repl. outlined)','FontSize',9);
-sgtitle('Increase in coherence \DeltaR = R(f,v) - R_0(f): does de-rotating beat the un-rotated coherence?','FontSize',11);
+title(ax, {'mean gain', 'contour = replication'},'FontSize',9);
+sgtitle({['Increase in coherence dR = R(f,v) - R0(f): does de-rotating beat the un-rotated coherence?   (' esc(est_note) ')'], ...
+         'white contour = significant   |   black line = best-fit speed   |   the pooled standardised test is on the R-grid figure (it is identical for R and dR)'}, ...
+         'FontSize',9);
 set(f2,'PaperPositionMode','auto'); pos=get(f2,'Position'); set(f2,'PaperUnits','points','PaperSize',pos(3:4));
-saveas(f2, fullfile(out_dir,'derotation_gain_grids.pdf'));
+saveas(f2, fullfile(out_dir, ['derotation_gain_grids' tag '.pdf']));
 
 %% ─── Figure 3: best-fit propagation DIRECTION vs frequency ────────────
 % At each frequency the best-fit plane wave has a direction (taken at the
@@ -270,18 +410,21 @@ for k = 1:numel(valid)
 end
 sgtitle('Best-fit planar-wave direction & speed vs frequency (filled = significant increase in coherence)','FontSize',11);
 set(f3,'PaperPositionMode','auto'); pos=get(f3,'Position'); set(f3,'PaperUnits','points','PaperSize',pos(3:4));
-saveas(f3, fullfile(out_dir,'derotation_direction_speed.pdf'));
+saveas(f3, fullfile(out_dir, ['derotation_direction_speed' tag '.pdf']));
 
 results = struct('G',G,'C',C,'animals',{animals},'dv',dv, ...
     'FREQ_RANGE',FREQ_RANGE,'V_CORTICAL',V_CORTICAL,'THETA',THETA, ...
-    'SPACING_MM',SPACING_MM,'SPEED_OK',SPEED_OK,'nPerm',nPerm,'alpha',alpha);
-save(fullfile(res_dir,'planar_wave_derotation.mat'),'results','-v7.3');
+    'SPACING_MM',SPACING_MM,'SPEED_OK',SPEED_OK,'nPerm',nPerm,'alpha',alpha,'ESTIMATOR',ESTIMATOR);
+% drop the per-permutation null grids before saving (~100 MB otherwise)
+for ia = valid, G(ia).z_null = []; end
+results.G = G;
+save(fullfile(res_dir, ['planar_wave_derotation' tag '.mat']),'results','-v7.3');
 fprintf('\nSaved figures + results under %s\n', out_dir);
 
 %% =====================================================================
 %% Helpers
 %% =====================================================================
-function [Robs, R0, Rnull_max, Gnull_max, DIRbest] = derotate_grid(pref, coh, coh_sig, f_use, fHz, XY, Vs_mm, Th, MIN_CH, nPerm)
+function [Robs, R0, Rnull_max, Gnull_max, DIRbest, Rnull, Gnull] = derotate_grid(Zmap, coh_sig, f_use, fHz, XY, Vs_mm, Th, MIN_CH, nPerm)
 % Coherent cortical planar-wave plane fit by de-rotation, over the
 % (frequency × speed × direction) grid.
 %   R(f,v,θ) = | Σ_c w_c e^{i(φ_c − k d_c(θ)) } | / Σ_c w_c ,  k = 2πf/v_mm,
@@ -295,15 +438,12 @@ function [Robs, R0, Rnull_max, Gnull_max, DIRbest] = derotate_grid(pref, coh, co
 nF = numel(f_use); nV = numel(Vs_mm);
 Robs = nan(nF, nV); R0 = nan(nF, 1); DIRbest = nan(nF, nV);
 Rnull_max = -inf(nPerm,1); Gnull_max = -inf(nPerm,1);
+Rnull = nan(nF, nV, nPerm); Gnull = nan(nF, nV, nPerm);   % kept for cross-animal pooling
 ct = [cos(Th(:)), sin(Th(:))].';          % 2 × nTheta
 
 for fi = 1:nF
     f = f_use(fi); fh = fHz(fi);
-    PHI = squeeze(pref(:, f, :));         % nCh × nPos
-    W   = squeeze(coh(:, f, :));          % nCh × nPos
-    M   = isfinite(PHI) & isfinite(W) & (W > 0);
-    W(~M) = 0; PHI(~M) = 0;
-    z   = sum(W .* exp(1i*PHI), 2);       % nCh × 1 collapsed complex map
+    z    = Zmap(:, f);                    % nCh × 1 per-electrode complex map
     useC = coh_sig(:, f) & isfinite(z) & (abs(z) > 0);
     if sum(useC) < MIN_CH, continue; end
 
@@ -332,12 +472,69 @@ for fi = 1:nF
         rb = -inf;
         for vi = 1:nV
             m = max(abs(Ap.' * Ecache{vi})) / max(sw, eps);
+            Rnull(fi,vi,b) = m;                 % full grid kept for pooling
+            Gnull(fi,vi,b) = m - R0(fi);
             if m > rb, rb = m; end
         end
         if rb > Rnull_max(b),          Rnull_max(b) = rb;          end
         if rb - R0(fi) > Gnull_max(b), Gnull_max(b) = rb - R0(fi); end
     end
 end
+if ~all(isfinite(Rnull_max))
+    warning(['%d/%d permutations produced no finite statistic — the max-stat ' ...
+             'threshold is INVALID (thr=-inf makes every cell "significant").'], ...
+             sum(~isfinite(Rnull_max)), nPerm);
+end
+end
+
+function [Ssum, Wch] = get_trial_sums_obs(base, animalName, dv, nCh, nPerm, force)
+% Observed per-location complex sums S(c,p,f) and per-channel normalisers W(c)
+% for the 'trial' estimator. One SLURM job per channel via
+% functions/trial_position_sums_chan.m, cached on disk and SHARED with
+% stimulus_loc_traveling_wave.m. Only S_obs is read here: this script's null
+% shuffles electrode <-> array coordinate, not trial labels, so the (large)
+% permutation part of each file is never loaded.
+data_dir = fullfile(base, ['results_' animalName], 'multi_lin_reg', 'cp10_till_100');
+sum_dir  = fullfile(base, ['results_' animalName], 'scanning', 'trial_position_sums', 'cp10_till_100', dv);
+if ~exist(sum_dir,'dir'), mkdir(sum_dir); end
+
+need = force;
+if ~need
+    for ch = 1:nCh
+        if ~isfile(fullfile(sum_dir, num2str(ch), 'trial_position_sums.mat')), need = true; break; end
+    end
+end
+if need
+    fprintf('  submitting %d SLURM jobs for trial-level position sums...\n', nCh);
+    cfg = cell(1, nCh);
+    for ch = 1:nCh
+        cfg{ch}.ichan = ch;  cfg{ch}.nPerm = nPerm;  cfg{ch}.dv = dv;
+        cfg{ch}.infile = data_dir;  cfg{ch}.outfile = sum_dir;
+        cfg{ch}.perm_seed_base = 2025;
+    end
+    slurmfun(@trial_position_sums_chan, cfg, ...
+        'partition','8GB', 'stopOnError',false, 'useUserPath',true);
+else
+    fprintf('  re-using cached trial-level position sums in %s\n', sum_dir);
+end
+
+first = '';
+for ch = 1:nCh
+    fch = fullfile(sum_dir, num2str(ch), 'trial_position_sums.mat');
+    if isfile(fch), first = fch; break; end
+end
+if isempty(first), error('no trial-level position sums found under %s', sum_dir); end
+D0 = load(first, 'S_obs');
+[nPos, nFreq] = size(D0.S_obs);
+Ssum = complex(nan(nCh, nPos, nFreq));  Wch = nan(nCh,1);
+for ch = 1:nCh
+    fch = fullfile(sum_dir, num2str(ch), 'trial_position_sums.mat');
+    if ~isfile(fch), warning('missing trial sums for channel %d', ch); continue; end
+    D = load(fch, 'S_obs', 'W');       % NOT S_perm — not needed here
+    Ssum(ch,:,:) = D.S_obs;  Wch(ch) = D.W;
+end
+fprintf('  trial sums: %d/%d channels loaded (observed only, %.1f MB)\n', ...
+    sum(isfinite(Wch)), nCh, numel(Ssum)*16/1e6);
 end
 
 function speed_yticks(ax, speeds, SPEED_OK)
