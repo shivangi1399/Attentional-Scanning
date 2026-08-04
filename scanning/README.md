@@ -23,11 +23,11 @@ Two animals (`hermes`, `klecks`), 64-channel 8×8 V4 arrays, `cp10_till_100`, `d
         └──────────────► functions/trial_position_sums_chan.m ──► trial_position_sums/
                           (SLURM: 1 job/channel)                  S(ch,pos,freq), W(ch)
                                                                   │
-                                    used by the 'trial' ESTIMATOR in the two
+                                    used by the 'coherence' ESTIMATOR in the two
                                     de-rotation scripts (cache shared by both)
 ```
 
-`phase_progression.m` is the only script that touches raw trials in the main path. Everything else consumes `phase_progression.mat` — except the `trial` estimator, which goes back to the trials via the cached per-location sums.
+`phase_progression.m` is the only script that touches raw trials in the main path. Everything else consumes `phase_progression.mat` — except the `coherence` estimator, which goes back to the trials via the cached per-location sums.
 
 Also read (not produced here): `phase_coherence/complex/.../coherence.mat` + `coh_perm_complex.mat`, used to build the per-channel coherence-significance mask that gates which channels enter each analysis.
 
@@ -78,11 +78,42 @@ Also produces `pref_phase` and `coh_mag`, which every other script below runs on
    constant k:   fixed, frequency-independent phase offset  ->  DIAGONAL ridge
 ```
 
-**Answer: NEGATIVE — diagonal ridge, no replication.** Absolute R never clears its threshold (R max ≈ thr, 0 significant cells in either animal). Gain is significant in each animal separately (23 cells hermes, 86 klecks) but **0 cells replicate**. The best-fit speed rises with frequency rather than staying flat.
+**Answer: NEGATIVE — diagonal ridge, no replication.** Run of 2026-08-04, both estimators, `nPerm = 1000`, max-stat over the 35 × 30 × 24 grid.
 
-> **PGD-positive and de-rotation-negative is not a contradiction.** PGD checks whether the gradient arrows point the same way, one frequency at a time. De-rotation additionally checks the *size* of the ramp and forces one speed to explain all frequencies. There is a spatial phase tilt; it is not dispersion-consistent.
+| estimator | animal | R0 (median) | max R | thr | sig R | thr gain | sig gain |
+|---|---|---|---|---|---|---|---|
+| `phase` | hermes | 0.947 | 0.9910 | 0.9915 | **0** | 0.0147 | 23 |
+| `phase` | klecks | 0.9916 | 0.9971 | 0.9972 | **0** | 0.0029 | 86 |
+| `coherence` | hermes | 0.953 | 0.9942 | 0.9942 | 3 | 0.0112 | 35 |
+| `coherence` | klecks | 0.9916 | 0.9971 | 0.9973 | **0** | 0.0030 | 87 |
 
-Also note the baselines: `R0` ≈ **0.947 (hermes)** and **0.992 (klecks)**. Klecks' entire gain ceiling is `1 − 0.992 = 0.008`, so its 86 "significant" cells are statistically real but physiologically negligible — the electrodes are already ~99% phase-aligned.
+**Replicated cells: 0 for R under both estimators; 0 gain cells under `phase`, 1/1050 under `coherence`.** Pooled: 256 (`phase`) and 343 (`coherence`) cells — sitting on the diagonal.
+
+Three things make this a clean negative:
+
+**1. The two animals are significant in disjoint frequency bands.** That is *why* nothing replicates — it is not a threshold accident:
+
+```
+   hermes  sig gain at  4-6 / 35 frequencies,  25.5 - 80.0 Hz
+   klecks  sig gain at   12 / 35 frequencies,   5.6 - 25.5 Hz
+```
+
+Neither band matches the other, and neither matches PGD's theta + beta (§2).
+
+**2. The best-fit speed rises with frequency, in proportion — the constant-wavenumber signature, quantified:**
+
+```
+   klecks   f  5.6 -> 25.5 Hz   (x4.6)      v  34.5 -> 202.4 cm/s   (x5.9)
+   hermes   f 25.5 -> 80.0 Hz   (x3.1)      v  62.2 -> 166.3 cm/s   (x2.7)
+```
+
+`v ∝ f` means `k = 2πf/v` is **constant**. One fixed phase offset fits every frequency. A real wave is the opposite: one fixed *speed* fits every frequency, and `k` grows with `f`.
+
+**3. The ceiling is severe, and here it cannot be engineered away.** `R0` medians are **0.947 (hermes)** and **0.9916 (klecks)** — electrodes are already ~95–99 % phase-aligned with nothing de-rotated. Klecks' entire gain ceiling is `1 − 0.9916 = 0.008`, so its 86–87 "significant" cells are statistically real and physiologically negligible.
+
+> Note the contrast with §5: there, switching to the `coherence` estimator dropped `R0` from ~0.9 to ~0.07 and removed the ceiling objection. **It does not do that here** — 0.947 → 0.953 and 0.9916 → 0.9916. The reason is structural: this script's statistic is always a resultant *across electrodes*, `R = |Σ_c w_c e^(i(φ_c − k·d_c))| / Σ_c w_c`, and that normaliser divides `|Zmap|` back out. The estimator changes the weights, not the scale of `R`. The ceiling is a property of the analysis, not of the estimator.
+
+> **PGD-positive and de-rotation-negative is not a contradiction** — see [the reconciliation below](#why-pgd-is-positive-but-every-de-rotation-test-is-negative).
 
 ### 5. `stimulus_loc_traveling_wave.m` — does the wave track the scanned stimulus?
 
@@ -96,9 +127,45 @@ Also note the baselines: `R0` ≈ **0.947 (hermes)** and **0.992 (klecks)**. Kle
 | `visual_coherent` | `k·(d_p + D_c)` | + a per-electrode delay fixed across positions (wave sweeping out from the fovea) |
 | `visual_arrival` | `k·(d_p + a(c,p))` | the wave starts *where the stimulus lands* |
 
-**Answer: NEGATIVE in all three modes.** Significance in hermes only, confined to **3.33–4.44 Hz** (the 3 lowest usable frequency bins), gains 1.0–2.7× threshold, with the significant region running to the top edge of the speed range. Klecks shows nothing anywhere. **0 cells replicate in any mode.**
+**Answer: NEGATIVE in all three modes, under BOTH estimators.** Run of 2026-08-04, `nPerm = 1000`, `alpha = 0.05`, max-stat corrected over the whole 35 × 30 = 1050-cell grid. Numbers below are `all RF centres` (the `_validRF` variant is in the note at the end of this section).
 
-The decisive number is the baseline: `R0` ≈ **0.80 (hermes)**, **0.93 (klecks)**. The per-location preferred phases are already 80–93 % aligned before any de-rotation, so there is almost no position-dependent phase for a wave model to organise. That is test #1's weak result, restated as a single number.
+**Replication — the primary criterion — is ZERO everywhere.**
+
+| estimator | mode | replicated R | replicated gain | pooled sig |
+|---|---|---|---|---|
+| `phase` | `visual` | **0** | **0** | 2 (thr 2.99) |
+| `phase` | `visual_coherent` | **0** | **0** | 1 (thr 3.27) |
+| `phase` | `visual_arrival` | **0** | **0** | 87 (thr 2.69) |
+| `coherence` | `visual` | **0** | **0** | 40 (thr 3.45) |
+| `coherence` | `visual_coherent` | **0** | **0** | 1 (thr 3.27) |
+| `coherence` | `visual_arrival` | **0** | **0** | 395 (thr 2.80) |
+
+Per animal (hermes / klecks), the gain never clears threshold in klecks at all, and in hermes only in the `phase` estimator:
+
+| estimator | mode | sig-gain hermes | sig-gain klecks |
+|---|---|---|---|
+| `phase` | `visual` | 10 / 1050 | 0 |
+| `phase` | `visual_coherent` | 14 / 1050 | 0 |
+| `phase` | `visual_arrival` | 21 / 1050 | 0 |
+| `coherence` | all three modes | **0** | **0** |
+
+#### Why this is a strong negative and not a power problem
+
+**1. The `phase` baseline is nearly saturated.** `R0` medians are **0.80 (hermes)** and **0.93 (klecks)** — the per-location preferred phases are already 80–93 % aligned before any de-rotation. Gain ceilings of 0.20 and 0.07. That is test #1's weak result restated as one number.
+
+**2. The `coherence` estimator removes that objection, and still finds nothing.** Its `R0` is an ordinary phase coherence — medians **0.063 (hermes)**, **0.078 (klecks)** — leaving ample headroom. It does not use it:
+
+| mode | max R0 | max R (best cell in the whole grid) |
+|---|---|---|
+| `visual` | 0.081 / 0.096 | 0.080 / 0.095 |
+| `visual_coherent` | 0.077 / 0.096 | 0.076 / 0.084 |
+| `visual_arrival` | 0.081 / 0.096 | 0.079 / 0.086 |
+
+(hermes / klecks). **`max R ≤ max R0` in every mode and both animals** — the best de-rotation anywhere in the grid recovers no more coherence than doing nothing at all. Gain thresholds are 0.0003–0.0007, i.e. the null itself barely moves, and the observed gain does not reach even that.
+
+**3. The pooled hits are the diagonal, not a wave.** `visual_arrival` produces the largest pooled counts (87 and 395 cells) and the largest z values (up to 7.4). Look at where they sit on the grid: a **diagonal ridge**, speed rising with frequency = constant wavenumber = a fixed, frequency-independent phase offset. A wave requires a horizontal band. This is the same signature as PGD's theta-5 / beta-28–51 cm/s split (§2) and the cortical de-rotation result (§4). Pooled significance confirms the ridge is not noise; it does not make it a wave. With `n = 2` a pooled cell can also be ~100 % one animal — the script prints the per-animal z at the peak cell for exactly this reason.
+
+> ⚠️ **`_validRF` caveat.** In the 2026-08-04 run the `phase` estimator's `visual_coherent` and `visual_arrival` modes were invalid under `RF_VALID_ONLY = true`: dropping the Extrapolated RF centres leaves NaN geometry, which an unrestricted `randperm` shuffled into the used channel set, making every permutation NaN and collapsing the threshold to `-inf` (hence a spurious 1050/1050 "significant"). Fixed — those two helpers now permute only among finite-geometry channels, and all six helpers call `null_guard`. **Re-run needed before quoting `_validRF` numbers for those two modes.** Unaffected: everything in the tables above (all-RF), and the `coherence` estimator in both variants — its `_validRF` results agree with the all-RF ones (0 replicated, 0 sig-gain, 40 / 0 / 477 pooled).
 
 ### 6. `traveling_wave_H2_H1.m` — deprecated
 
@@ -108,15 +175,173 @@ Descriptive 9-page PDF (phase heatmaps, phase-change maps, circular-variance map
 
 ## Overall answer
 
-> There **is** an intrinsic planar traveling wave across V4 cortex (theta + beta, replicated in both animals) — but it is **not locked to the scanned stimulus**, and it is not dispersion-consistent. Phase progression across positions is weak, the wave origin does not track the driven patch, and every de-rotation test produces a constant-wavenumber diagonal rather than a constant-speed band, with zero cross-animal replication.
+> There **is** a robust, replicated, planar spatial phase gradient across V4 (theta + beta, both animals). But it is **stationary, not propagating**, and it is **not organised by the scanned stimulus**. Every de-rotation test produces a constant-wavenumber diagonal rather than a constant-speed band, with essentially zero cross-animal replication.
 >
-> **Ongoing planar wave: yes. Scanning wave: unsupported.**
+> **Planar phase structure: yes. Traveling wave: no. Scanning wave: unsupported.**
+
+Five tests, each asking a stricter question than the last:
+
+| test | question | result |
+|---|---|---|
+| #1 phase progression | does preferred phase depend on stimulus position? | weak — 2/35 and 3/35 frequencies |
+| #2 PGD | are the phase-gradient arrows aligned across cortex? | **positive, replicated** — theta + beta |
+| #3 origin | is the focus at the RF-driven patch, and does it follow it? | null (p ≈ 0.36–0.90) |
+| #4 cortical de-rotation | does the ramp scale with frequency (one `v` for all `f`)? | negative — 0 replicated R, 1/1050 gain cell |
+| #5 stimulus de-rotation | does the phase ramp with stimulus distance? | negative — **0 replicated, 3 modes × 2 estimators** |
+
+**Why #2 passes and #4 fails is not a contradiction** — PGD is scale-free and single-frequency, so a fixed phase offset scores perfectly on it. [Full reconciliation below.](#why-pgd-is-positive-but-every-de-rotation-test-is-negative)
+
+**The ceiling objection is closed for #5, and structurally unclosable for #4.** The obvious complaint was that `R0` sat at 0.80–0.99, leaving nothing for a wave to win:
+
+- **#5 (stimulus):** the `coherence` estimator drops `R0` to an ordinary phase coherence (0.06–0.08), so the headroom is real. De-rotation still buys nothing — `max R ≤ max R0` in every mode and both animals. **The negative result is not a baseline artifact.**
+- **#4 (cortical):** the same switch does *not* lower `R0` (0.947 → 0.953, 0.9916 → 0.9916), because that statistic is always a resultant across electrodes and the normaliser divides `|Zmap|` back out. Its gain ceiling of 0.008 (klecks) is a property of the analysis. So #4's "significant" gain cells are real but negligible in size, and #4 rests on **replication and the diagonal geometry**, not on the gain magnitude.
 
 ---
 
-## The two estimators — two levels of "coherence"
+## Why PGD is positive but every de-rotation test is negative
 
-Both de-rotation scripts take `ESTIMATOR = 'phase' | 'trial'`. The three modes say **what** is de-rotated; the estimator says **at which level the alignment is measured**. This distinction matters because the word "coherence" is used for two different things in this pipeline.
+This is the central puzzle of the whole folder, and it has a clean answer: **the three tests ask three different questions, and only PGD's is weak enough to pass.**
+
+```
+   #2 PGD        at ONE frequency, do the phase-gradient arrows point
+                 the same way across the array?                          -> YES
+
+   #4 cortical   does the phase ramp GROW with frequency, as k = 2πf/v
+      de-rotation with ONE v for all f?                                  -> NO
+
+   #5 stimulus   does the preferred phase ramp with STIMULUS distance?   -> NO
+      de-rotation
+```
+
+### PGD vs cortical de-rotation: direction is not propagation
+
+PGD is `|mean(grad φ)| / mean(|grad φ|)`. Two properties make it permissive:
+
+- **It is scale-free.** The normaliser divides the gradient magnitude straight out, so PGD sees only the *direction* of the arrows, never how big the phase steps are.
+- **It is evaluated one frequency at a time.** It never compares frequencies, so it cannot notice that the ramp fails to scale.
+
+A **fixed, frequency-independent spatial phase offset** therefore scores a perfect PGD at every frequency — the arrows are identical and perfectly aligned — while being the opposite of a traveling wave.
+
+The discriminator is what stays constant across frequency:
+
+```
+   constant TIME delay τ      ->  Δφ = 2πf·τ  ->  k ∝ f     ->  v fixed
+                                                              HORIZONTAL band
+                                                              = TRAVELING WAVE
+
+   constant PHASE offset Δφ   ->  k independent of f  ->  v = 2πf/k ∝ f
+                                                              DIAGONAL ridge
+                                                              = STATIONARY pattern
+```
+
+Your data is unambiguously the second. Three independent readings agree:
+
+| evidence | reading |
+|---|---|
+| PGD's own per-frequency speeds: theta ≈ 5, beta ≈ 28–51 cm/s | `v` rising with `f` |
+| §4 klecks: `f` ×4.6 → `v` ×5.9; hermes: `f` ×3.1 → `v` ×2.7 | `v ∝ f`, so `k` const |
+| §4/§5 grids: diagonal ridge, never a horizontal band | `k` const |
+
+PGD was never wrong. It correctly detected an **aligned spatial phase gradient**. De-rotation adds the requirement that the gradient *scale with frequency*, and that is what fails.
+
+**This also rules out a whole class of explanations.** Anything based on signals propagating — axonal conduction, attention sweeping across cortex, any finite-speed mechanism — produces a constant *time* delay and therefore `k ∝ f`. The observation of constant `k` is incompatible with all of them. What remains are stationary explanations: a fixed anatomical/laminar phase offset across the array, reference or volume-conduction structure, or a genuine standing (non-propagating) phase pattern.
+
+### PGD vs the stimulus test: different axes entirely
+
+These two are not even measured along the same dimension.
+
+```
+   PGD / cortical de-rotation :  distance = mm across the ARRAY
+   stimulus de-rotation       :  distance = degrees in the VISUAL FIELD
+```
+
+A phase gradient can exist across cortex without being organised by where the stimulus is. The scanning hypothesis needs the *stimulus* axis, and three separate tests say it is not there:
+
+1. **Test #1** — preferred phase barely depends on stimulus position: significant at 2/35 (hermes) and 3/35 (klecks) frequencies.
+2. **Test #3** — the wave focus is not at the RF-driven patch (p ≈ 0.36–0.78) and does not follow it across positions (p ≈ 0.42–0.90).
+3. **Test #5** — `R0` = 0.80/0.93 under `phase`: the per-location preferred phases are already 80–93 % aligned *before* any de-rotation, so there is almost no position-dependent phase for any wave model to organise. Under `coherence`, where that ceiling is gone, `max R ≤ max R0` in every mode and both animals.
+
+Test #1 and test #5's `R0` are the same fact stated twice — one as a correlation, one as a baseline.
+
+### Putting it together
+
+```
+   there IS a spatial phase structure across V4        (PGD, replicated)
+        it is PLANAR, not radial or spiral             (test #3 classification)
+        it is STATIONARY, not propagating              (constant k, both scripts)
+        it is NOT organised by stimulus position       (tests #1, #3-origin, #5)
+```
+
+So the honest summary is not "we found nothing". It is: **there is a robust, replicated, planar spatial phase gradient across V4 — and it is a fixed pattern, not a wave, and not tied to the scanned stimulus.**
+
+## The two estimators — `phase` (PHASE ALIGNMENT) vs `coherence` (PHASE COHERENCE)
+
+Both de-rotation scripts set `ESTIMATORS = {'phase','coherence'}` and compute **both in a single run**. The three modes say **what** is de-rotated; the estimator says **what is being vector-summed**, and therefore what the number `R` actually means.
+
+> Naming note: the `coherence` estimator was called `trial` in earlier versions. The SLURM worker and its on-disk cache keep the name `trial_position_sums` — that is literally what they hold (per-**trial** sums grouped by position). Only the estimator was renamed.
+
+### In one line
+
+**The estimator swaps what sits in each grid cell: an alignment index, or an actual phase coherence. Nothing else changes.**
+
+```
+   cell (f, v) of the grid contains:
+
+   'phase'      vector-sums the nPos PER-LOCATION PREFERRED-PHASE vectors
+                R = resultant length / sum of weights
+                -> "how concentrated are these nPos angles"
+                -> NOT a phase coherence
+
+   'coherence'  vector-sums ALL TRIALS directly
+                R = |Σ_t y_t·e^(iφ_t)| / Σ_t|y_t|
+                -> a genuine phase coherence (the phase_coherence/ measure)
+```
+
+**Identical under both** — this is worth being blunt about, because it is easy to assume the gain is what distinguishes them:
+
+| shared | |
+|---|---|
+| the de-rotation | `k = 2πf/v`, spin by `k·d` |
+| the three modes | `visual` / `visual_coherent` / `visual_arrival` |
+| the baseline | `R0` = the same statistic at `k = 0` |
+| **the gain** | **`dR = R − R0` — computed identically. `R − R0` is NOT the difference between the estimators.** |
+| the null | synchronised label shuffle |
+| thresholds, replication, pooling | |
+
+### Two things that are easy to get backwards
+
+- **`R − R0` is a subtraction of two magnitudes** (resultant lengths / coherences), not of phases. The phase subtraction `φ_p − k·d_p` happens *inside*, before the vector sum, in both estimators.
+- **`phase` is not a coherence.** Its `R` is a weighted resultant length over locations — a circular-concentration measure. The trial-level coherence enters only as the **weight** `coh_mag`; the trials were averaged away upstream. This is why its `R0` sits at 0.80–0.99: a handful of angles are easily concentrated.
+
+### What each run produces
+
+Three figures per RF setting, both estimators in one run:
+
+```
+   stimulus_loc_grids[_validRF].pdf
+       THE DE-ROTATION R. 6 rows = 3 modes x 2 estimators, estimator named in
+       every panel title. 4 cols = animals + mean/replication + pooled z.
+       Colour limits are set PER ESTIMATOR BLOCK — a fixed [0,1] scale renders
+       the phase-coherence block (R ~ 0.08) as flat blue.
+
+   stimulus_loc_gain_phase[_validRF].pdf        gain dR, PHASE ALIGNMENT
+   stimulus_loc_gain_coherence[_validRF].pdf    gain dR, PHASE COHERENCE
+       3 rows x 3 cols: animals + mean/replication. No pooled column (below).
+
+   stimulus_loc_wave[_validRF].mat
+       BOTH estimators: results.G.(estimator).(mode)(animal), results.C.(estimator)
+```
+
+The cortical script mirrors this: `derotation_R_grids.pdf` (2 rows = the two estimators), plus `derotation_gain_grids_<est>.pdf` and `derotation_direction_speed_<est>.pdf` per estimator.
+
+**Why the gain figures carry no pooled column.** Because `gain = R − R0(f)` and `R0` depends on neither speed nor the shuffle:
+
+```
+   muG = muR − R0 ,   sdG = sdR
+   zG  = (R − R0 − muG)/sdG = (R − muR)/sdR = zR
+```
+
+The pooled gain panel would be a pixel-for-pixel copy of the pooled R panel (verified: `max|zR − zG| = 1.75e-13`, identical thresholds), so it is drawn once, on the grids figure. Both scripts now assert this at runtime and warn if it ever fails. The **per-animal** R and gain panels are genuinely different and both are kept.
 
 ### Level 1 — coherence across TRIALS (the `phase_coherence/` sense)
 
@@ -149,7 +374,7 @@ The level-1 coherence enters only as a **weight**; what is summed is the *prefer
                                      └──(level 2: resultant over positions)──► R
 ```
 
-### The `trial` estimator collapses the two levels into one
+### The `coherence` estimator collapses the two levels into one
 
 Every trial is rotated by the model's prediction for the location *that trial* had, and one coherence is taken over the whole trial set:
 
@@ -160,32 +385,69 @@ Every trial is rotated by the model's prediction for the location *that trial* h
 
 At `k = 0` this is **exactly the phase coherence of the `phase_coherence/` pipeline** with all locations pooled.
 
+**Order of operations.** De-rotation happens on the *trials*, before any coherence is computed. There is exactly **one** coherence per `(f, v)` cell — not one per position.
+
+```
+   trial   location   d_p    y_t    phi_t      phi_t − k·d_p   <- de-rotated
+   -----   --------   ---    ---    ------     -------------
+     1        p1       0     2.1     10°            10°
+     2        p3       4     1.4    170°            10°        (k·d = 160°)
+     3        p2       2     0.8     90°            10°        (k·d =  80°)
+     4        p4       6     2.2    250°            10°        (k·d = 240°)
+
+   then ONE coherence over all of them:
+       R(f,v)  = | Σ_t y_t · e^(i(phi_t − k·d_p(t))) | / W      phases shifted
+       R0(f)   = | Σ_t y_t · e^(i·phi_t)             | / W      phases untouched
+       gain    = R − R0                                          de-rotated MINUS actual
+```
+
+The raw phase column (10°, 170°, 90°, 250°) is scattered → low coherence. The de-rotated column is all 10° → high coherence. That difference *is* the gain.
+
+**`S(p,f)` is a shortcut, not a comparison.** Every trial at the same location gets the same rotation `e^(−i·k·d_p)`, so the trials at a location can be pre-added:
+
+```
+   Σ_t  y_t·e^(i(phi_t − k·d_p(t)))  =  Σ_p  e^(−i·k·d_p) · [ Σ_{t at p} y_t·e^(i·phi_t) ]
+                                                             \_______________________/
+                                                                       S(p,f)
+```
+
+`S(p,f)` is cached once, then every `(f,v)` cell is a cheap re-weighting of ~16 numbers. It is never divided by anything or read on its own — per-location coherences are never computed, and never compared with each other.
+
+**Three ways to misread this:**
+
+- *"De-rotation adds coherence to a position."* No — `|S_p·e^(−i·k·d_p)| = |S_p|`. Rotating never changes a vector's length. Only the **sum across locations** changes, because rotation changes directions and therefore how much the terms cancel.
+- *"The wave predicts position 3 is more coherent than position 1."* No — it predicts a **phase** relation, `phi_3 − phi_1 = k·(d_3 − d_1)`. Same coherence, later phase. (Only distance *differences* matter, which is why `d_vis = ecc − min(ecc)` is safe: a common offset rotates every term equally and leaves `|Σ|` unchanged.)
+- *"gain = actual − de-rotated."* Backwards. `gain = R − R0`, de-rotated minus actual, so a real wave gives a **positive** gain.
+
 ### What R, R0 and the gain mean under each
 
-| | `phase` | `trial` |
+| | `phase` (PHASE ALIGNMENT) | `coherence` (PHASE COHERENCE) |
 |---|---|---|
 | what R measures | how similar the per-location **preferred phases** are after de-rotation | the **phase coherence** over all trials after de-rotation |
 | what R0 is (`k = 0`) | how similar they already were | the pooled phase coherence, no rotation |
-| typical R0 | **0.80–0.93** (stimulus script), **0.947–0.992** (cortical) | an ordinary coherence, order 0.05–0.2 |
-| gain ceiling `1 − R0` | tiny — 0.07 for klecks, 0.008 in the cortical script | large, but limited by how much position-dependence actually exists |
+| typical R0 (measured, `visual`, validRF) | median **0.80** hermes / **0.93** klecks (cortical script: 0.947 / 0.992) | median **0.063** hermes / **0.078** klecks |
+| gain ceiling `1 − R0` | tiny — 0.07 for klecks, 0.008 in the cortical script | large in principle; bounded in practice by how much position-dependence exists |
+| gain threshold actually obtained | 0.031 hermes / 0.008 klecks | 0.0006 hermes / 0.0007 klecks |
 | units comparable across estimators? | **no** — never compare an R from one with an R from the other | |
 
 `gain = R − R0` is computed identically for both. Nothing about the gain readout was removed or changed.
 
-### Why `trial` is the better-behaved estimator
+A **lower `R0` under `coherence` is good news**, not a weaker result — it means headroom for a gain to appear. Compare each estimator against its own threshold, never against the other's.
 
-**1. No binning loss.** `phase` estimates 16 separate coherences from ~1/16 of the trials each, then fits to those noisy intermediates. `trial` fits the unbinned data directly.
+### Why `coherence` is the better-behaved estimator
+
+**1. No binning loss.** `phase` estimates 16 separate coherences from ~1/16 of the trials each, then fits to those noisy intermediates. `coherence` fits the unbinned data directly.
 
 **2. It fixes a weighting flaw.** `phase` weights location *p* by `|c_p|` — but under noise `|c_p| ~ 1/√n_p`, so a location with **fewer** trials gets a **larger** weight. Backwards. The two estimators differ by exactly this:
 
 ```
-   phase :  uses  S(p,f) / n_p     (the per-location MEAN, then weighted by |c_p|)
-   trial :  uses  S(p,f)           (the raw SUM — every trial counts once)
+   phase     :  uses  S(p,f) / n_p   (the per-location MEAN, then weighted by |c_p|)
+   coherence :  uses  S(p,f)         (the raw SUM — every trial counts once)
 ```
 
 **3. An interpretable baseline.** `R0` becomes a coherence directly comparable with the `phase_coherence/` results, instead of a phase-similarity index pinned near 0.9 by construction.
 
-**It will not manufacture an effect.** If preferred phase barely depends on location, both estimators say so. `trial` has more power to see a small one and a cleaner baseline — that is all.
+**It will not manufacture an effect.** If preferred phase barely depends on location, both estimators say so. `coherence` has more power to see a small one and a cleaner baseline — that is all.
 
 ### Implementation
 
@@ -230,7 +492,7 @@ Combining animals (replication vs pooled) and how to read a frequency × speed g
   Plots/scanning/<analysis>/cp10_till_100/<dv>/                     *.pdf
 ```
 
-Output names carry `[_trial]` for the estimator and `[_validRF]` for the RF filter, so all combinations coexist rather than overwriting.
+Both estimators run together. The R grids figure holds both; the gain (and, in the cortical script, direction/speed) figures carry `_phase` / `_coherence`, and `[_validRF]` marks the RF filter, so all combinations coexist rather than overwriting.
 
 ---
 
@@ -460,15 +722,16 @@ The pooled null pairs permutation *b* of one animal with permutation *b* of the 
 
 ### Reading the output
 
-Both PDFs are laid out **rows = modes, columns = hermes / klecks / mean+replication / pooled z**:
+The R-grid PDF is laid out **rows = modes x estimators, columns = hermes / klecks / mean+replication / pooled z**; the gain PDFs are **rows = modes, columns = hermes / klecks / mean+replication** (no pooled column — see the estimator section):
 
 ```
-   Plots/scanning/phase_alignment_wave/cp10_till_100/lfp/
-       phase_alignment_grids_validRF.pdf     absolute R
-       phase_alignment_gain_validRF.pdf      gain dR = R - R0, with best-speed line
+   Plots/scanning/stimulus_loc_wave/cp10_till_100/lfp/
+       stimulus_loc_grids_validRF.pdf            absolute R, BOTH estimators
+       stimulus_loc_gain_phase_validRF.pdf       gain dR, PHASE ALIGNMENT
+       stimulus_loc_gain_coherence_validRF.pdf   gain dR, PHASE COHERENCE
 
-   results_combined/scanning/phase_alignment_wave/cp10_till_100/lfp/
-       phase_alignment_validRF.mat
+   results_combined/scanning/stimulus_loc_wave/cp10_till_100/lfp/
+       stimulus_loc_wave_validRF.mat             both estimators in one file
 ```
 
 ```

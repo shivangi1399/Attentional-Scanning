@@ -54,54 +54,87 @@
 % wave assumed; dR isolates the wave-specific phase ramp.
 %
 % =====================================================================
-% TWO ESTIMATORS (setting: ESTIMATOR = 'phase' | 'trial')
+% TWO ESTIMATORS — 'phase' (PHASE ALIGNMENT) vs 'coherence' (PHASE COHERENCE)
 % =====================================================================
-% The three modes above describe WHAT is de-rotated. ESTIMATOR chooses at which
-% LEVEL the alignment is measured. Both give an R in [0,1] and both feed the
-% identical mode / null / gain / replication / pooling machinery.
+% Setting: ESTIMATORS = {'phase','coherence'} — BOTH are computed in one run.
 %
-%   ESTIMATOR = 'phase'  (default; the original two-stage estimator)
-%     Stage 1, done upstream by phase_progression.m: coherence ACROSS TRIALS,
-%       c(ch,f,p) = mean over trials at location p of  y*exp(i*phase)
+% The three modes above describe WHAT is de-rotated (which distance goes into
+% k*d). The ESTIMATOR describes WHAT IS BEING VECTOR-SUMMED, and therefore what
+% the number R actually means. This is the single most important distinction in
+% this script, so it is spelled out here in full.
+%
+% -------------------------------------------------------------------------
+%  BOTH estimators share, identically:
+%       the de-rotation          k = 2*pi*f/v, spin by k*d
+%       the three modes          visual / visual_coherent / visual_arrival
+%       the baseline             R0 = the same statistic at k = 0
+%       the gain                 dR = R - R0        <-- COMMON TO BOTH.
+%                                                       dR is NOT what
+%                                                       distinguishes them.
+%       the null                 synchronised location-label shuffle
+%       thresholds, replication, pooling, figures
+%  They differ in ONE thing: what the vectors being summed are.
+% -------------------------------------------------------------------------
+%
+%   ESTIMATOR 'phase'  —  PHASE ALIGNMENT  (two-stage; the original estimator)
+%     Stage 1 (upstream, phase_progression.m): per-location coherence across
+%       trials,  c(ch,f,p) = mean over trials at location p of y*exp(i*phase)
 %       -> pref_phase = angle(c),  coh_mag = |c|.
-%     Stage 2, here: align those per-location preferred-phase VECTORS,
-%       R_c(f,v) = | SUM_p coh_mag * exp(i(pref_phase - k*d_p)) | / SUM_p coh_mag.
-%     So R measures how similar the 16 per-location PREFERRED PHASES are after
-%     de-rotation. R0 is "how similar were they already", which runs ~0.80-0.93
-%     in this data — a very high baseline that leaves little headroom.
+%     Stage 2 (here): vector-sum those nPos PER-LOCATION PREFERRED-PHASE
+%       vectors, one per location:
+%         R_c(f,v) = | SUM_p coh_mag * exp(i(pref_phase - k*d_p)) | / SUM_p coh_mag
 %
-%   ESTIMATOR = 'trial'  (the phase-coherence-level estimator)
-%     One stage. Every TRIAL is rotated by the model's prediction for the
-%     location that trial had, and ONE phase coherence is taken over all trials:
-%       c(f,v) = (1/W) * SUM over all trials  y_t * exp(i(phi_tf - k*d_p(t))) ,
+%     *** R IS NOT A PHASE COHERENCE. *** It is a weighted RESULTANT LENGTH
+%     over locations — a circular-concentration measure answering "how
+%     similar are these nPos angles after de-rotation?". The trial-level
+%     coherence enters only as the WEIGHT coh_mag; the trials themselves have
+%     already been averaged away in stage 1.
+%     Consequence: R0 = "how similar were the preferred phases already", which
+%     runs ~0.80-0.93 in this data. High by construction (a handful of angles
+%     are easily concentrated), leaving a gain ceiling of only 0.07-0.20.
+%
+%   ESTIMATOR 'coherence'  —  PHASE COHERENCE  (one-stage, trial-level)
+%     No per-location stage at all. Every TRIAL is rotated by the model's
+%     prediction for the location THAT TRIAL had, and ONE coherence is taken
+%     over the whole trial set:
+%       c(f,v) = (1/W) * SUM over ALL TRIALS y_t*exp(i(phi_tf - k*d_p(t))) ,
 %       W = SUM_t |y_t| ,   R = |c| .
-%     At k=0 this is EXACTLY the phase coherence of the phase_coherence/
-%     pipeline with all locations pooled — so here R0 is a coherence in the
-%     familiar sense (small, ~0.05-0.2), not a similarity-of-phases number.
 %
-%   Why 'trial' is the better-behaved estimator:
-%     (a) No binning loss. 'phase' estimates 16 separate coherences from ~1/16
-%         of the trials each and then fits to those noisy intermediates;
-%         'trial' fits the unbinned data directly.
-%     (b) Correct weighting. 'phase' weights location p by |c_p|, but under
-%         noise |c_p| ~ 1/sqrt(n_p), so a location with FEWER trials gets a
-%         LARGER weight — backwards. 'trial' counts every trial once.
-%     (c) Interpretable baseline. R0 is a phase coherence, directly comparable
-%         with the phase_coherence/ results, instead of a phase-similarity
-%         index pinned near 0.9.
-%     It is NOT expected to manufacture an effect: if preferred phase barely
-%     depends on location, both estimators will say so. 'trial' just has more
-%     power to see a small one, and a cleaner baseline.
+%     *** R IS A GENUINE PHASE COHERENCE *** — at k = 0 it is EXACTLY the
+%     measure computed by Phase_coherence/functions/phase_coherence.m, with all
+%     stimulus locations pooled (only the normaliser differs: /W instead of
+%     /nTrials, so R is bounded in [0,1]).
+%     Consequence: R0 is a coherence in the familiar sense (~0.06-0.08 here),
+%     so there is real headroom for a gain to appear.
 %
-%   Implementation: the de-rotation factor depends on a trial only through its
-%   location, so the estimator collapses onto per-location complex SUMS
+%     NOTE: no per-location coherences are ever computed or compared. Locations
+%     enter only through which rotation each trial receives.
+%
+%   Side by side, at the level of the sum:
+%       'phase'      SUM over nPos LOCATION VECTORS  (trials pre-averaged)
+%       'coherence'  SUM over ALL TRIALS             (no pre-averaging)
+%
+%   And the one-line algebraic difference:
+%       'phase'      uses  S(p,f)/n_p   the per-location MEAN, weighted by
+%                                       |c_p| ~ 1/sqrt(n_p)  -> a location with
+%                                       FEWER trials gets a LARGER weight
+%       'coherence'  uses  S(p,f)       the raw SUM -> every trial counts once
+%
+%   R VALUES ARE NOT COMPARABLE BETWEEN THE TWO. Judge each against its own
+%   threshold. A lower R0 under 'coherence' is good news (headroom), not a
+%   weaker result.
+%
+%   Implementation of 'coherence': the de-rotation factor depends on a trial
+%   only through its location, so the estimator collapses onto per-location
+%   complex SUMS
 %       S(p,f) = SUM over trials at p of y_t*exp(i*phi_tf)
 %       c(f,v) = (1/W) * SUM_p S(p,f)*exp(-i*k*d_p) ,
 %   and all three modes reduce to re-weightings of S. One SLURM job per channel
 %   (functions/trial_position_sums_chan.m) produces S for the observed labels
-%   and for all nPerm shuffles; everything else is done here from S. Note the
-%   contrast with 'phase': it uses S(p,:)/n_p (the mean), 'trial' uses the raw
-%   sum — that single difference is point (b) above.
+%   and for all nPerm shuffles; everything else is done here from S.
+%   (The worker and its on-disk cache keep the name 'trial_position_sums'
+%   because that is literally what they hold — per-TRIAL sums grouped by
+%   position. Only the ESTIMATOR was renamed 'trial' -> 'coherence'.)
 %
 % Pipeline, PER ANIMAL (never pooled): grid -> animals -> mean grid +
 %   "significant in both" replication.
@@ -139,21 +172,36 @@
 %   and figure titles carry a '_validRF' tag when the toggle is on, so both
 %   variants can coexist on disk.
 %
-% Output (rows = the three modes, cols = animals + combined). Names carry the
-% '_validRF' tag when RF_VALID_ONLY is on:
-%   Plots/scanning/phase_alignment_wave/cp10_till_100/<dv>/
-%       phase_alignment_grids[_validRF].pdf   (absolute R)
-%       phase_alignment_gain[_validRF].pdf    (de-rotation gain dR + best-speed line)
-%   results_combined/scanning/phase_alignment_wave/cp10_till_100/<dv>/
-%       phase_alignment[_validRF].mat
+% OUTPUT — THREE figures per run. Names carry the '_validRF' tag when
+% RF_VALID_ONLY is on; the two gain figures also carry the estimator name.
+%   Plots/scanning/stimulus_loc_wave/cp10_till_100/<dv>/
+%     stimulus_loc_grids[_validRF].pdf
+%         THE DE-ROTATION R. 6 rows = 3 modes x 2 estimators (estimator named
+%         in every panel title, because R means different things in the two
+%         blocks), 4 cols = animals + mean/replication + pooled z.
+%         The pooled z column lives HERE ONLY — see note below.
+%     stimulus_loc_gain_phase[_validRF].pdf
+%         Gain dR = R - R0 for the PHASE-ALIGNMENT estimator. 3 rows x 3 cols.
+%     stimulus_loc_gain_coherence[_validRF].pdf
+%         Gain dR = R - R0 for the PHASE-COHERENCE estimator. 3 rows x 3 cols.
+%   results_combined/scanning/stimulus_loc_wave/cp10_till_100/<dv>/
+%       stimulus_loc_wave[_validRF].mat (BOTH estimators in one file:
+%                                        results.G.(estimator).(mode)(animal))
 %
-% A prose walkthrough of the three modes (with figures) lives alongside this
-% file in scanning/phase_alignment_modes.md.
+% WHY THE GAIN FIGURES HAVE NO POOLED COLUMN. Because gain = R - R0(f) and R0
+% depends on neither speed nor the shuffle, the pooled standardised statistics
+% are algebraically IDENTICAL:
+%       muG = muR - R0 ,  sdG = sdR
+%       zG  = (R - R0 - muG)/sdG = (R - muR)/sdR = zR
+% (verified on saved output: max|zR - zG| = 1.75e-13, identical thresholds).
+% A pooled gain panel would therefore be a pixel-for-pixel copy of the pooled R
+% panel, so it is drawn once, on the grids figure. The PER-ANIMAL R and gain
+% panels are genuinely different and both are kept.
 % =====================================================================
 
 clearvars; close all; clc
 
-%% ─── Dependencies (only the 'trial' estimator needs slurmfun) ────────
+%% ─── Dependencies (only the 'coherence' estimator needs slurmfun) ────
 addpath /opt/ESIsoftware/matlab/slurmfun/
 addpath /mnt/hpc/projects/MWSampling/4Shivangi/code/scanning/functions
 
@@ -192,17 +240,22 @@ SCREEN_XY = [1680 1050];  % screen pixels; fixation/fovea at the centre
 % uses RF centres and is unchanged either way.
 RF_VALID_ONLY = true;
 
-% Which estimator to run (see the TWO ESTIMATORS block in the header).
-%   'phase' — two-stage, aligns the per-location preferred-phase vectors from
-%             phase_progression.mat. The original estimator, unchanged.
-%   'trial' — one-stage, de-rotates every trial and takes ONE phase coherence;
-%             needs ph_all_sess.mat and one SLURM job per channel.
-% Both compute R, R0 and the gain dR = R - R0 identically; only the innermost
-% definition of R differs. Outputs are tagged so both can coexist on disk.
-ESTIMATOR = 'trial';
+% WHICH ESTIMATORS TO RUN — see the TWO ESTIMATORS block in the header.
+% Both are computed in a SINGLE run; the grids figure shows them side by side
+% and each gets its own gain figure.
+%   'phase'     PHASE ALIGNMENT.  R = resultant length of the nPos per-location
+%               preferred-phase vectors (from phase_progression.mat).
+%               NOT a phase coherence — a circular-concentration measure.
+%   'coherence' PHASE COHERENCE.  R = coherence over ALL trials after each
+%               trial is de-rotated by its own location's predicted lag. At
+%               k = 0 this IS the Phase_coherence/ measure, locations pooled.
+%               Needs ph_all_sess.mat and one SLURM job per channel.
+% Order matters only for figure row order. Set to a single name to run one.
+ESTIMATORS = {'phase','coherence'};
 
-% Force re-submission of the per-channel SLURM jobs for the trial estimator even
-% if cached sums exist (set true after changing dv, nPerm or the trial worker).
+% Force re-submission of the per-channel SLURM jobs that build the per-location
+% trial sums S(p,f) used by the 'coherence' estimator, even if a cache exists
+% (set true after changing dv, nPerm, or functions/trial_position_sums_chan.m).
 RECOMPUTE_TRIAL_SUMS = true;
 
 if RF_VALID_ONLY
@@ -212,16 +265,21 @@ else
     rf_tag  = '';
     rf_note = 'RF: all centres incl. Extrapolated';
 end
-switch ESTIMATOR
-    case 'phase', est_tag = '';        est_note = 'estimator: phase (per-location preferred phases)';
-    case 'trial', est_tag = '_trial';  est_note = 'estimator: trial (phase coherence over all trials)';
-    otherwise,    error('Unknown ESTIMATOR: %s', ESTIMATOR);
+% Per-estimator naming used in filenames, panel titles and console output. The
+% short label goes in panel titles (space is tight); the long one in sgtitles.
+EST_INFO = struct( ...
+    'phase',     struct('tag','_phase',     'short','PHASE ALIGNMENT', ...
+        'long','phase estimator = PHASE ALIGNMENT: R = resultant of the per-location preferred-phase vectors (NOT a phase coherence)'), ...
+    'coherence', struct('tag','_coherence', 'short','PHASE COHERENCE', ...
+        'long','coherence estimator = PHASE COHERENCE: R = coherence over all trials, each de-rotated by its own location (the Phase_coherence/ measure at k=0)'));
+for ei = 1:numel(ESTIMATORS)
+    if ~isfield(EST_INFO, ESTIMATORS{ei}), error('Unknown ESTIMATOR: %s', ESTIMATORS{ei}); end
 end
-tag  = [est_tag rf_tag];               % filename suffix for both figures + .mat
-note = [est_note '  |  ' rf_note];     % shown in the figure sgtitles
+tag  = rf_tag;                         % shared suffix (grids figure + .mat)
+note = rf_note;                        % shown in the figure sgtitles
 
-out_dir = fullfile(base,'Plots','scanning','phase_alignment_wave','cp10_till_100', dv);
-res_dir = fullfile(base,'results_combined','scanning','phase_alignment_wave','cp10_till_100', dv);
+out_dir = fullfile(base,'Plots','scanning','stimulus_loc_wave','cp10_till_100', dv);
+res_dir = fullfile(base,'results_combined','scanning','stimulus_loc_wave','cp10_till_100', dv);
 if ~exist(out_dir,'dir'), mkdir(out_dir); end
 if ~exist(res_dir,'dir'), mkdir(res_dir); end
 
@@ -322,35 +380,43 @@ for ia = 1:numel(animals)
     fprintf('  arrival distance a(c,p): %d/%d channels usable | %.2f-%.2f deg\n', ...
         sum(all(isfinite(a_arr),2)), nCh, min(a_arr(:),[],'omitnan'), max(a_arr(:),[],'omitnan'));
 
-    % TRIAL estimator: fetch the per-location complex sums (one SLURM job per
-    % channel, cached on disk). Not touched by the 'phase' estimator.
-    if strcmp(ESTIMATOR,'trial')
+    % 'coherence' estimator: fetch the per-location complex trial sums S(p,f)
+    % (one SLURM job per channel, cached on disk). The 'phase' estimator never
+    % touches these — it works entirely from phase_progression.mat.
+    if any(strcmp(ESTIMATORS,'coherence'))
         [Ssum, Sperm, Wch] = get_trial_sums(base, animalName, dv, nCh, nPerm, RECOMPUTE_TRIAL_SUMS);
     end
 
+  for ei = 1:numel(ESTIMATORS)
+    est = ESTIMATORS{ei};
+    fprintf('  --- estimator: %s (%s) ---\n', est, EST_INFO.(est).short);
     for mi = 1:numel(metrics)
         d = d_vis(:).'; Vs = Vsets{mi};
-        switch [ESTIMATOR '/' metrics{mi}]
+        % The ONLY place the two estimators diverge. Everything below this
+        % switch — thresholds, standardisation, gain, pooling — is identical.
+        %   'phase'     sums nPos per-location preferred-phase vectors
+        %   'coherence' sums all trials (via the cached per-location sums S)
+        switch [est '/' metrics{mi}]
+            case 'phase/visual'
+                [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid(S.pref_phase, S.coh_mag, coh_sig, ...
+                    f_use, fHz, d, Vs, MIN_LOC, nPerm);
             case 'phase/visual_coherent'
                 [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid_coherent(S.pref_phase, S.coh_mag, coh_sig, ...
                     f_use, fHz, d, Dc, Vs, MIN_LOC, nPerm);
             case 'phase/visual_arrival'
                 [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid_arrival(S.pref_phase, S.coh_mag, coh_sig, ...
                     f_use, fHz, d, a_arr, Vs, MIN_LOC, nPerm);
-            case 'phase/visual'
-                [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid(S.pref_phase, S.coh_mag, coh_sig, ...
-                    f_use, fHz, d, Vs, MIN_LOC, nPerm);
-            case 'trial/visual_coherent'
-                [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = trial_grid_coherent(Ssum, Sperm, Wch, coh_sig, ...
-                    f_use, fHz, d, Dc, Vs, nPerm);
-            case 'trial/visual_arrival'
-                [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = trial_grid_arrival(Ssum, Sperm, Wch, coh_sig, ...
-                    f_use, fHz, d, a_arr, Vs, nPerm);
-            case 'trial/visual'
-                [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = trial_grid(Ssum, Sperm, Wch, coh_sig, ...
+            case 'coherence/visual'
+                [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = coh_grid(Ssum, Sperm, Wch, coh_sig, ...
                     f_use, fHz, d, Vs, nPerm);
+            case 'coherence/visual_coherent'
+                [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = coh_grid_coherent(Ssum, Sperm, Wch, coh_sig, ...
+                    f_use, fHz, d, Dc, Vs, nPerm);
+            case 'coherence/visual_arrival'
+                [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = coh_grid_arrival(Ssum, Sperm, Wch, coh_sig, ...
+                    f_use, fHz, d, a_arr, Vs, nPerm);
             otherwise
-                error('Unhandled ESTIMATOR/mode: %s', [ESTIMATOR '/' metrics{mi}]);
+                error('Unhandled ESTIMATOR/mode: %s', [est '/' metrics{mi}]);
         end
         thr = quantile(Rnull_max, 1-alpha);
         sig = Robs >= thr;
@@ -387,30 +453,34 @@ for ia = 1:numel(animals)
         vbest_speed  = Vs(vbest(:));             % best de-rotation speed per freq
         vbest_sig    = (gpk - R0(:)) >= thr_gain;% is that gain significant?
 
-        G.(metrics{mi})(ia).animal = animalName;
-        G.(metrics{mi})(ia).R = Robs; G.(metrics{mi})(ia).thr = thr;
-        G.(metrics{mi})(ia).sig = sig; G.(metrics{mi})(ia).fHz = fHz;
-        G.(metrics{mi})(ia).speeds = Vs;
-        G.(metrics{mi})(ia).R0 = R0(:);              % no-rotation baseline per freq
-        G.(metrics{mi})(ia).gain = gain;             % de-rotation gain grid
-        G.(metrics{mi})(ia).thr_gain = thr_gain;
-        G.(metrics{mi})(ia).sig_gain = sig_gain;
-        G.(metrics{mi})(ia).vbest = vbest_speed;     % best speed per freq
-        G.(metrics{mi})(ia).vbest_sig = vbest_sig;
-        G.(metrics{mi})(ia).zR_obs = zR_obs;         % standardised grids, for pooling
-        G.(metrics{mi})(ia).zG_obs = zG_obs;
-        G.(metrics{mi})(ia).zR_null = zR_null;       % nF x nV x nPerm (stripped before save)
-        G.(metrics{mi})(ia).zG_null = zG_null;
+        m = metrics{mi};
+        G.(est).(m)(ia).animal = animalName;
+        G.(est).(m)(ia).estimator = est;
+        G.(est).(m)(ia).R = Robs; G.(est).(m)(ia).thr = thr;
+        G.(est).(m)(ia).sig = sig; G.(est).(m)(ia).fHz = fHz;
+        G.(est).(m)(ia).speeds = Vs;
+        G.(est).(m)(ia).R0 = R0(:);              % no-rotation baseline per freq
+        G.(est).(m)(ia).gain = gain;             % de-rotation gain grid
+        G.(est).(m)(ia).thr_gain = thr_gain;
+        G.(est).(m)(ia).sig_gain = sig_gain;
+        G.(est).(m)(ia).vbest = vbest_speed;     % best speed per freq
+        G.(est).(m)(ia).vbest_sig = vbest_sig;
+        G.(est).(m)(ia).zR_obs = zR_obs;         % standardised grids, for pooling
+        G.(est).(m)(ia).zG_obs = zG_obs;
+        G.(est).(m)(ia).zR_null = zR_null;       % nF x nV x nPerm (stripped before save)
+        G.(est).(m)(ia).zG_null = zG_null;
 
         [rmax,ix] = max(Robs(:)); [fi,vi] = ind2sub(size(Robs), ix);
-        fprintf('  %-8s: peak R=%.3f at f=%.1f Hz, v=%.1f %s | thr=%.3f | sig cells=%d\n', ...
-            metrics{mi}, rmax, fHz(fi), Vs(vi), Vunit{mi}, thr, sum(sig(:)));
+        fprintf('    %-16s: peak R=%.4f at f=%.1f Hz, v=%.1f %s | R0 range %.4f-%.4f | thr=%.4f | sig cells=%d\n', ...
+            m, rmax, fHz(fi), Vs(vi), Vunit{mi}, min(R0,[],'omitnan'), max(R0,[],'omitnan'), thr, sum(sig(:)));
         [gmax,gix] = max(gain(:)); [gfi,gvi] = ind2sub(size(gain), gix);
-        fprintf('  %-8s: peak gain dR=%.3f at f=%.1f Hz, v=%.1f %s | thr_gain=%.3f | sig-gain cells=%d | freqs w/ sig gain=%d/%d\n', ...
-            metrics{mi}, gmax, fHz(gfi), Vs(gvi), Vunit{mi}, thr_gain, sum(sig_gain(:)), sum(vbest_sig), numel(vbest_sig));
+        fprintf('    %-16s: peak gain dR=%.4f at f=%.1f Hz, v=%.1f %s | thr_gain=%.4f | sig-gain cells=%d | freqs w/ sig gain=%d/%d\n', ...
+            m, gmax, fHz(gfi), Vs(gvi), Vunit{mi}, thr_gain, sum(sig_gain(:)), sum(vbest_sig), numel(vbest_sig));
     end
+  end
 end
-valid = find(arrayfun(@(s) ~isempty(s.animal), G.(metrics{1})));
+% Animals that produced grids (same set for every estimator/mode).
+valid = find(arrayfun(@(s) ~isempty(s.animal), G.(ESTIMATORS{1}).(metrics{1})));
 
 %% ─── Combine animals: (a) REPLICATION, (b) POOLED standardised test ──
 % Two different criteria, reported side by side. They answer different
@@ -438,59 +508,72 @@ valid = find(arrayfun(@(s) ~isempty(s.animal), G.(metrics{1})));
 % NOTE: with n=2 neither criterion supports a population-level inference —
 % between-animal variance is not estimable. Replication is simply the more
 % conservative descriptive rule.
+% Done SEPARATELY FOR EACH ESTIMATOR — the two never share a null or a
+% threshold, because their R values live on different scales.
 C = struct();
-for mi = 1:numel(metrics)
+for ei = 1:numel(ESTIMATORS)
+  est = ESTIMATORS{ei};
+  fprintf('\n--- combining animals | estimator: %s (%s) ---\n', est, EST_INFO.(est).short);
+  for mi = 1:numel(metrics)
     m = metrics{mi};
     Rsum = 0; Gsum = 0;
     ZRsum = 0; ZGsum = 0; ZRnull = 0; ZGnull = 0;
-    repl = true(size(G.(m)(valid(1)).R)); repl_gain = repl;
+    repl = true(size(G.(est).(m)(valid(1)).R)); repl_gain = repl;
     for ia = valid
-        Rsum = Rsum + G.(m)(ia).R;
-        Gsum = Gsum + G.(m)(ia).gain;
-        repl = repl & G.(m)(ia).sig;
-        repl_gain = repl_gain & G.(m)(ia).sig_gain;
-        ZRsum  = ZRsum  + G.(m)(ia).zR_obs;    ZGsum  = ZGsum  + G.(m)(ia).zG_obs;
-        ZRnull = ZRnull + G.(m)(ia).zR_null;   ZGnull = ZGnull + G.(m)(ia).zG_null;
+        Rsum = Rsum + G.(est).(m)(ia).R;
+        Gsum = Gsum + G.(est).(m)(ia).gain;
+        repl = repl & G.(est).(m)(ia).sig;
+        repl_gain = repl_gain & G.(est).(m)(ia).sig_gain;
+        ZRsum  = ZRsum  + G.(est).(m)(ia).zR_obs;    ZGsum  = ZGsum  + G.(est).(m)(ia).zG_obs;
+        ZRnull = ZRnull + G.(est).(m)(ia).zR_null;   ZGnull = ZGnull + G.(est).(m)(ia).zG_null;
     end
     nA = numel(valid);
-    C.(m).R = Rsum/nA; C.(m).repl = repl;
-    C.(m).gain = Gsum/nA; C.(m).repl_gain = repl_gain;
-    C.(m).fHz = G.(m)(valid(1)).fHz; C.(m).speeds = Vsets{mi};
+    C.(est).(m).R = Rsum/nA; C.(est).(m).repl = repl;
+    C.(est).(m).gain = Gsum/nA; C.(est).(m).repl_gain = repl_gain;
+    C.(est).(m).fHz = G.(est).(m)(valid(1)).fHz; C.(est).(m).speeds = Vsets{mi};
 
     % pooled standardised grids + their max-stat thresholds.
     % max() omits NaN per column, so skipped frequencies are harmless; but if a
     % whole animal's grid is NaN (every frequency skipped for that mode) every
     % column is NaN, quantile returns NaN, and the panel/threshold are
     % meaningless. Guard that explicitly instead of letting NaN through.
-    C.(m).ZR = ZRsum/nA;  C.(m).ZG = ZGsum/nA;
+    C.(est).(m).ZR = ZRsum/nA;  C.(est).(m).ZG = ZGsum/nA;
     maxR = max(reshape(ZRnull/nA, [], nPerm), [], 1).';   % nPerm × 1
     maxG = max(reshape(ZGnull/nA, [], nPerm), [], 1).';
     tR = quantile(maxR, 1-alpha);  tG = quantile(maxG, 1-alpha);
     if ~isfinite(tR) || ~isfinite(tG)
-        warning(['%s: pooled null is entirely NaN — at least one animal produced no finite ' ...
+        warning(['%s/%s: pooled null is entirely NaN — at least one animal produced no finite ' ...
                  'cells for this mode (every frequency skipped? too few usable channels?). ' ...
-                 'Pooled test disabled for this mode; replication is unaffected.'], m);
+                 'Pooled test disabled for this mode; replication is unaffected.'], est, m);
         if ~isfinite(tR), tR = Inf; end     % Inf => nothing significant, never NaN
         if ~isfinite(tG), tG = Inf; end
     end
-    C.(m).thr_pool_R = tR;              C.(m).thr_pool_G = tG;
-    C.(m).sig_pool_R = C.(m).ZR >= tR;  C.(m).sig_pool_G = C.(m).ZG >= tG;
-    C.(m).pooled_ok  = isfinite(tR) && isfinite(tG);
+    C.(est).(m).thr_pool_R = tR;                    C.(est).(m).thr_pool_G = tG;
+    C.(est).(m).sig_pool_R = C.(est).(m).ZR >= tR;  C.(est).(m).sig_pool_G = C.(est).(m).ZG >= tG;
+    C.(est).(m).pooled_ok  = isfinite(tR) && isfinite(tG);
+
+    % zR and zG are algebraically identical (see the header note on why the gain
+    % figures carry no pooled column). Assert it rather than trust it silently.
+    dz = max(abs(C.(est).(m).ZR(:) - C.(est).(m).ZG(:)), [], 'omitnan');
+    if isfinite(dz) && dz > 1e-8
+        warning('%s/%s: pooled zR and zG differ by %.3g — the R0-invariance assumption is violated.', est, m, dz);
+    end
 
     fprintf('%-16s: BOTH-animal (replication) R=%d gain=%d | POOLED z R=%d (thr %.2f) gain=%d (thr %.2f)\n', ...
-        m, sum(repl(:)), sum(repl_gain(:)), sum(C.(m).sig_pool_R(:)), C.(m).thr_pool_R, ...
-        sum(C.(m).sig_pool_G(:)), C.(m).thr_pool_G);
+        m, sum(repl(:)), sum(repl_gain(:)), sum(C.(est).(m).sig_pool_R(:)), C.(est).(m).thr_pool_R, ...
+        sum(C.(est).(m).sig_pool_G(:)), C.(est).(m).thr_pool_G);
 
     % For any pooled-significant gain cell, show how lopsided it is: a pooled
     % hit carried by one animal is NOT a combined result.
-    if any(C.(m).sig_pool_G(:))
-        [~, ix] = max(C.(m).ZG(:) .* double(C.(m).sig_pool_G(:)));
-        [pf, pv] = ind2sub(size(C.(m).ZG), ix);
-        za = arrayfun(@(ia) G.(m)(ia).zG_obs(pf,pv), valid);
+    if any(C.(est).(m).sig_pool_G(:))
+        [~, ix] = max(C.(est).(m).ZG(:) .* double(C.(est).(m).sig_pool_G(:)));
+        [pf, pv] = ind2sub(size(C.(est).(m).ZG), ix);
+        za = arrayfun(@(ia) G.(est).(m)(ia).zG_obs(pf,pv), valid);
         fprintf('%-16s:   peak pooled gain cell f=%.2f Hz v=%.1f: per-animal z = [%s] (%s)\n', ...
-            m, C.(m).fHz(pf), C.(m).speeds(pv), ...
-            strjoin(compose('%.2f', za), ', '), strjoin({G.(m)(valid).animal}, ', '));
+            m, C.(est).(m).fHz(pf), C.(est).(m).speeds(pv), ...
+            strjoin(compose('%.2f', za), ', '), strjoin({G.(est).(m)(valid).animal}, ', '));
     end
+  end
 end
 
 %% ─── Figure: freq × speed alignment heatmaps ─────────────────────────
@@ -506,134 +589,184 @@ esc = @(s) strrep(s, '_', '\_');
 % gain grid).
 speeds_to_idx = @(sp,sv) interp1(sv, 1:numel(sv), sp, 'linear', NaN);
 
-ncol = numel(valid)+2;   % animals + mean/replication + pooled standardised
-f1 = figure('Visible','off','Position',[40 40 380*ncol 320*numel(metrics)]);
-for mi = 1:numel(metrics)
-    m = metrics{mi};
+%% ─── FIGURE 1: the DE-ROTATION R grids, both estimators ──────────────
+% Rows = 3 modes x 2 estimators (estimator block named in every panel title,
+% because R means a DIFFERENT THING in the two blocks and the values are NOT
+% comparable between them). Cols = animals + mean/replication + pooled z.
+% Colour limits are set PER ESTIMATOR BLOCK from that block's own data — a
+% fixed [0 1] scale renders the phase-coherence block (R ~ 0.08) as flat blue.
+nEst = numel(ESTIMATORS);
+ncol = numel(valid)+2;                       % animals + mean + pooled z
+nrow = nEst*numel(metrics);
+f1 = figure('Visible','off','Position',[40 40 380*ncol 320*nrow]);
+for ei = 1:nEst
+  est = ESTIMATORS{ei};
+  % shared colour range across all modes/animals of THIS estimator
+  rmax_e = 0;
+  for mi = 1:numel(metrics)
+      rmax_e = max(rmax_e, max(C.(est).(metrics{mi}).R(:),[],'omitnan'));
+      for ia = valid, rmax_e = max(rmax_e, max(G.(est).(metrics{mi})(ia).R(:),[],'omitnan')); end
+  end
+  if ~isfinite(rmax_e) || rmax_e <= 0, rmax_e = 1; end
+  for mi = 1:numel(metrics)
+    m   = metrics{mi};
+    row = (ei-1)*numel(metrics) + mi;
     for k = 1:numel(valid)
         ia = valid(k);
-        ax = subplot(numel(metrics), ncol, (mi-1)*ncol + k); hold(ax,'on');
-        imagesc(ax, G.(m)(ia).fHz, 1:numel(G.(m)(ia).speeds), G.(m)(ia).R.');
+        ax = subplot(nrow, ncol, (row-1)*ncol + k); hold(ax,'on');
+        imagesc(ax, G.(est).(m)(ia).fHz, 1:numel(G.(est).(m)(ia).speeds), G.(est).(m)(ia).R.');
         set(ax,'YDir','normal'); axis(ax,'tight');
-        contour(ax, G.(m)(ia).fHz, 1:numel(G.(m)(ia).speeds), double(G.(m)(ia).sig.'), [0.5 0.5], 'w','LineWidth',1.2);
-        yt = round(linspace(1,numel(G.(m)(ia).speeds),5));
-        set(ax,'YTick',yt,'YTickLabel',compose('%.0f',G.(m)(ia).speeds(yt)));
-        caxis(ax,[0 1]); colorbar(ax);
+        contour(ax, G.(est).(m)(ia).fHz, 1:numel(G.(est).(m)(ia).speeds), double(G.(est).(m)(ia).sig.'), [0.5 0.5], 'w','LineWidth',1.2);
+        yt = round(linspace(1,numel(G.(est).(m)(ia).speeds),5));
+        set(ax,'YTick',yt,'YTickLabel',compose('%.0f',G.(est).(m)(ia).speeds(yt)));
+        caxis(ax,[0 rmax_e]); colorbar(ax);
         xlabel(ax,'Frequency (Hz)'); ylabel(ax,sprintf('speed (%s)',Vunit{mi}));
-        title(ax, {sprintf('%s — %s', G.(m)(ia).animal, esc(m)), 'R'}, 'FontSize',9);
+        title(ax, {sprintf('%s — %s', G.(est).(m)(ia).animal, esc(m)), ...
+                   sprintf('R  [%s]', EST_INFO.(est).short)}, 'FontSize',9);
     end
-    % col ncol-1: descriptive mean, contour = REPLICATION (sig in both animals)
-    ax = subplot(numel(metrics), ncol, (mi-1)*ncol + ncol-1); hold(ax,'on');
-    imagesc(ax, C.(m).fHz, 1:numel(C.(m).speeds), C.(m).R.');
+    % mean R, contour = REPLICATION (significant in both animals)
+    ax = subplot(nrow, ncol, (row-1)*ncol + ncol-1); hold(ax,'on');
+    imagesc(ax, C.(est).(m).fHz, 1:numel(C.(est).(m).speeds), C.(est).(m).R.');
     set(ax,'YDir','normal'); axis(ax,'tight');
-    contour(ax, C.(m).fHz, 1:numel(C.(m).speeds), double(C.(m).repl.'), [0.5 0.5], 'w','LineWidth',1.4);
-    yt = round(linspace(1,numel(C.(m).speeds),5));
-    set(ax,'YTick',yt,'YTickLabel',compose('%.0f',C.(m).speeds(yt)));
-    caxis(ax,[0 1]); colorbar(ax);
+    contour(ax, C.(est).(m).fHz, 1:numel(C.(est).(m).speeds), double(C.(est).(m).repl.'), [0.5 0.5], 'w','LineWidth',1.4);
+    yt = round(linspace(1,numel(C.(est).(m).speeds),5));
+    set(ax,'YTick',yt,'YTickLabel',compose('%.0f',C.(est).(m).speeds(yt)));
+    caxis(ax,[0 rmax_e]); colorbar(ax);
     xlabel(ax,'Frequency (Hz)'); ylabel(ax,sprintf('speed (%s)',Vunit{mi}));
-    title(ax, {esc(m), 'mean (replication outlined)'}, 'FontSize',9);
+    title(ax, {sprintf('%s  [%s]', esc(m), EST_INFO.(est).short), 'mean R (replication outlined)'}, 'FontSize',9);
 
-    % col ncol: POOLED standardised z, contour = its own max-stat threshold.
-    % Units are z, NOT R — auto-scaled, so do not compare its colours with the
-    % panels to the left.
-    ax = subplot(numel(metrics), ncol, (mi-1)*ncol + ncol); hold(ax,'on');
-    imagesc(ax, C.(m).fHz, 1:numel(C.(m).speeds), C.(m).ZR.');
+    % POOLED standardised z, contour = its own max-stat threshold. Units are z,
+    % NOT R — auto-scaled, so do not compare its colours with the panels left of
+    % it. Drawn only here: the pooled gain z is algebraically identical (header).
+    ax = subplot(nrow, ncol, (row-1)*ncol + ncol); hold(ax,'on');
+    imagesc(ax, C.(est).(m).fHz, 1:numel(C.(est).(m).speeds), C.(est).(m).ZR.');
     set(ax,'YDir','normal'); axis(ax,'tight');
-    contour(ax, C.(m).fHz, 1:numel(C.(m).speeds), double(C.(m).sig_pool_R.'), [0.5 0.5], 'w','LineWidth',1.4);
-    set(ax,'YTick',yt,'YTickLabel',compose('%.0f',C.(m).speeds(yt)));
-    if ~any(isfinite(C.(m).ZR(:))), caxis(ax,[0 1]); end   % all-NaN: keep a sane colour range
+    contour(ax, C.(est).(m).fHz, 1:numel(C.(est).(m).speeds), double(C.(est).(m).sig_pool_R.'), [0.5 0.5], 'w','LineWidth',1.4);
+    set(ax,'YTick',yt,'YTickLabel',compose('%.0f',C.(est).(m).speeds(yt)));
+    if ~any(isfinite(C.(est).(m).ZR(:))), caxis(ax,[0 1]); end   % all-NaN: sane range
     colorbar(ax);
     xlabel(ax,'Frequency (Hz)'); ylabel(ax,sprintf('speed (%s)',Vunit{mi}));
-    if C.(m).pooled_ok, ttl_p = sprintf('POOLED z (thr %.2f)', C.(m).thr_pool_R);
-    else,               ttl_p = 'POOLED z — n/a (see warning)'; end
-    title(ax, {esc(m), ttl_p}, 'FontSize',9);
+    if C.(est).(m).pooled_ok, ttl_p = sprintf('POOLED z (thr %.2f)', C.(est).(m).thr_pool_R);
+    else,                     ttl_p = 'POOLED z — n/a (see warning)'; end
+    title(ax, {sprintf('%s  [%s]', esc(m), EST_INFO.(est).short), ttl_p}, 'FontSize',9);
+  end
 end
 % Plain ASCII in the sgtitle: MATLAB's TeX symbols (\Delta, subscripts) export to
 % PDF with broken advance widths, leaving visible gaps mid-word.
-sgtitle({['Phase-alignment traveling-wave grid: R after de-rotating locations by k*d, k = 2*pi*f/v   (' esc(note) ')'], ...
-         'white contour = significant (max-stat corrected over the whole grid)', ...
-         'col 3 = mean, contour = replication   |   col 4 = pooled standardised z, contour = its own max-stat threshold'}, ...
+sgtitle({['DE-ROTATION R: coherence/alignment after de-rotating locations by k*d, k = 2*pi*f/v   (' esc(note) ')'], ...
+         'ROWS 1-3 = PHASE ALIGNMENT estimator (R = resultant of the per-location preferred-phase vectors — NOT a phase coherence)', ...
+         'ROWS 4-6 = PHASE COHERENCE estimator (R = coherence over all trials, each de-rotated by its own location — the Phase\_coherence/ measure at k=0)', ...
+         'R IS NOT COMPARABLE BETWEEN THE TWO BLOCKS: colour limits are set per block, thresholds are per block.', ...
+         'white contour = significant (max-stat corrected over the whole grid)   |   col 3 = mean, contour = replication   |   col 4 = pooled standardised z (z units, auto-scaled)'}, ...
          'FontSize',9);
 set(f1,'PaperPositionMode','auto'); pos=get(f1,'Position'); set(f1,'PaperUnits','points','PaperSize',pos(3:4));
-saveas(f1, fullfile(out_dir, ['phase_alignment_grids' tag '.pdf']));
+saveas(f1, fullfile(out_dir, ['stimulus_loc_grids' tag '.pdf']));
 
-%% ─── Figure: de-rotation GAIN over the un-rotated ("actual") coherence ─
-% dR(f,v)=R(f,v)-R0(f): the speeds at which de-rotating beats no rotation.
-% A wave = significant positive gain (contour) along a near-constant best
-% speed (black line) across frequencies.
-f2 = figure('Visible','off','Position',[40 40 380*ncol 320*numel(metrics)]);
-for mi = 1:numel(metrics)
+%% ─── FIGURES 2..n: de-rotation GAIN, ONE FIGURE PER ESTIMATOR ────────
+% dR(f,v) = R(f,v) - R0(f): the speeds at which de-rotating beats not rotating.
+% A wave = significant positive gain (white contour) along a near-CONSTANT best
+% speed (black line) across frequencies; a rising black line means constant
+% wavenumber, i.e. a fixed phase offset rather than a propagating wave.
+% NO pooled column here — the pooled gain z equals the pooled R z exactly, and
+% is drawn once on the grids figure (see the header note).
+ncol_g = numel(valid)+1;                     % animals + mean/replication
+for ei = 1:nEst
+  est = ESTIMATORS{ei};
+  fg = figure('Visible','off','Position',[40 40 380*ncol_g 320*numel(metrics)]);
+  for mi = 1:numel(metrics)
     m = metrics{mi};
-    gmax_m = max(C.(m).gain(:));
-    for ia = valid, gmax_m = max(gmax_m, max(G.(m)(ia).gain(:))); end
+    gmax_m = max(C.(est).(m).gain(:),[],'omitnan');
+    for ia = valid, gmax_m = max(gmax_m, max(G.(est).(m)(ia).gain(:),[],'omitnan')); end
+    if ~isfinite(gmax_m) || gmax_m <= 0, gmax_m = eps; end
     for k = 1:numel(valid)
         ia = valid(k);
-        ax = subplot(numel(metrics), ncol, (mi-1)*ncol + k); hold(ax,'on');
-        imagesc(ax, G.(m)(ia).fHz, 1:numel(G.(m)(ia).speeds), G.(m)(ia).gain.');
+        ax = subplot(numel(metrics), ncol_g, (mi-1)*ncol_g + k); hold(ax,'on');
+        imagesc(ax, G.(est).(m)(ia).fHz, 1:numel(G.(est).(m)(ia).speeds), G.(est).(m)(ia).gain.');
         set(ax,'YDir','normal'); axis(ax,'tight');
-        contour(ax, G.(m)(ia).fHz, 1:numel(G.(m)(ia).speeds), double(G.(m)(ia).sig_gain.'), [0.5 0.5], 'w','LineWidth',1.2);
-        plot(ax, G.(m)(ia).fHz, speeds_to_idx(G.(m)(ia).vbest, G.(m)(ia).speeds), 'k-','LineWidth',1.3);
-        yt = round(linspace(1,numel(G.(m)(ia).speeds),5));
-        set(ax,'YTick',yt,'YTickLabel',compose('%.0f',G.(m)(ia).speeds(yt)));
-        caxis(ax,[0 max(gmax_m,eps)]); colorbar(ax);
+        contour(ax, G.(est).(m)(ia).fHz, 1:numel(G.(est).(m)(ia).speeds), double(G.(est).(m)(ia).sig_gain.'), [0.5 0.5], 'w','LineWidth',1.2);
+        plot(ax, G.(est).(m)(ia).fHz, speeds_to_idx(G.(est).(m)(ia).vbest, G.(est).(m)(ia).speeds), 'k-','LineWidth',1.3);
+        yt = round(linspace(1,numel(G.(est).(m)(ia).speeds),5));
+        set(ax,'YTick',yt,'YTickLabel',compose('%.0f',G.(est).(m)(ia).speeds(yt)));
+        caxis(ax,[0 gmax_m]); colorbar(ax);
         xlabel(ax,'Frequency (Hz)'); ylabel(ax,sprintf('speed (%s)',Vunit{mi}));
-        title(ax, {sprintf('%s — %s', G.(m)(ia).animal, esc(m)), 'gain dR'}, 'FontSize',9);
+        title(ax, {sprintf('%s — %s', G.(est).(m)(ia).animal, esc(m)), ...
+                   sprintf('gain dR (R0 %.3f-%.3f)', min(G.(est).(m)(ia).R0,[],'omitnan'), max(G.(est).(m)(ia).R0,[],'omitnan'))}, 'FontSize',9);
     end
-    % col ncol-1: descriptive mean gain, contour = REPLICATION
-    ax = subplot(numel(metrics), ncol, (mi-1)*ncol + ncol-1); hold(ax,'on');
-    imagesc(ax, C.(m).fHz, 1:numel(C.(m).speeds), C.(m).gain.');
+    % mean gain, contour = REPLICATION
+    ax = subplot(numel(metrics), ncol_g, (mi-1)*ncol_g + ncol_g); hold(ax,'on');
+    imagesc(ax, C.(est).(m).fHz, 1:numel(C.(est).(m).speeds), C.(est).(m).gain.');
     set(ax,'YDir','normal'); axis(ax,'tight');
-    contour(ax, C.(m).fHz, 1:numel(C.(m).speeds), double(C.(m).repl_gain.'), [0.5 0.5], 'w','LineWidth',1.4);
-    yt = round(linspace(1,numel(C.(m).speeds),5));
-    set(ax,'YTick',yt,'YTickLabel',compose('%.0f',C.(m).speeds(yt)));
-    caxis(ax,[0 max(gmax_m,eps)]); colorbar(ax);
+    contour(ax, C.(est).(m).fHz, 1:numel(C.(est).(m).speeds), double(C.(est).(m).repl_gain.'), [0.5 0.5], 'w','LineWidth',1.4);
+    yt = round(linspace(1,numel(C.(est).(m).speeds),5));
+    set(ax,'YTick',yt,'YTickLabel',compose('%.0f',C.(est).(m).speeds(yt)));
+    caxis(ax,[0 gmax_m]); colorbar(ax);
     xlabel(ax,'Frequency (Hz)'); ylabel(ax,sprintf('speed (%s)',Vunit{mi}));
     title(ax, {esc(m), 'mean gain (replication outlined)'}, 'FontSize',9);
-
-    % col ncol: POOLED standardised gain z + its own max-stat threshold.
-    % z units, auto-scaled — not comparable with the dR colours to the left.
-    ax = subplot(numel(metrics), ncol, (mi-1)*ncol + ncol); hold(ax,'on');
-    imagesc(ax, C.(m).fHz, 1:numel(C.(m).speeds), C.(m).ZG.');
-    set(ax,'YDir','normal'); axis(ax,'tight');
-    contour(ax, C.(m).fHz, 1:numel(C.(m).speeds), double(C.(m).sig_pool_G.'), [0.5 0.5], 'w','LineWidth',1.4);
-    set(ax,'YTick',yt,'YTickLabel',compose('%.0f',C.(m).speeds(yt)));
-    if ~any(isfinite(C.(m).ZG(:))), caxis(ax,[0 1]); end   % all-NaN: keep a sane colour range
-    colorbar(ax);
-    xlabel(ax,'Frequency (Hz)'); ylabel(ax,sprintf('speed (%s)',Vunit{mi}));
-    if C.(m).pooled_ok, ttl_p = sprintf('POOLED gain z (thr %.2f)', C.(m).thr_pool_G);
-    else,               ttl_p = 'POOLED gain z — n/a (see warning)'; end
-    title(ax, {esc(m), ttl_p}, 'FontSize',9);
+  end
+  sgtitle({sprintf('DE-ROTATION GAIN dR = R(f,v) - R0(f)   |   %s   (%s)', upper(EST_INFO.(est).short), esc(note)), ...
+           esc(EST_INFO.(est).long), ...
+           'R0 = the same statistic at k=0 (nothing de-rotated). dR asks: does assuming a wave buy any alignment/coherence over assuming none?', ...
+           'white contour = significant   |   black line = best-fit speed per frequency   |   FLAT line = real wave, RISING = constant wavenumber (not a wave)', ...
+           'no pooled column: the pooled gain z is identical to the pooled R z, drawn once on the grids figure'}, ...
+           'FontSize',9);
+  set(fg,'PaperPositionMode','auto'); pos=get(fg,'Position'); set(fg,'PaperUnits','points','PaperSize',pos(3:4));
+  saveas(fg, fullfile(out_dir, ['stimulus_loc_gain' EST_INFO.(est).tag tag '.pdf']));
 end
-sgtitle({['De-rotation gain dR = R(f,v) - R0(f): does de-rotating beat the un-rotated coherence?   (' esc(note) ')'], ...
-         'white contour = significant   |   black line = best-fit speed per frequency   |   flat line = real wave, rising = constant wavenumber', ...
-         'col 3 = mean, contour = replication   |   col 4 = pooled standardised z, contour = its own max-stat threshold'}, ...
-         'FontSize',9);
-set(f2,'PaperPositionMode','auto'); pos=get(f2,'Position'); set(f2,'PaperUnits','points','PaperSize',pos(3:4));
-saveas(f2, fullfile(out_dir, ['phase_alignment_gain' tag '.pdf']));
 
 % Drop the per-permutation null grids before saving — they are only needed to
 % build the pooled threshold above and would add ~100 MB to the .mat.
 % The standardised OBSERVED grids (zR_obs/zG_obs) are kept: they are what tells
 % you which animal drives any pooled-significant cell.
-for mi = 1:numel(metrics)
-    for ia = valid
-        G.(metrics{mi})(ia).zR_null = [];
-        G.(metrics{mi})(ia).zG_null = [];
+for ei = 1:numel(ESTIMATORS)
+    for mi = 1:numel(metrics)
+        for ia = valid
+            G.(ESTIMATORS{ei}).(metrics{mi})(ia).zR_null = [];
+            G.(ESTIMATORS{ei}).(metrics{mi})(ia).zG_null = [];
+        end
     end
 end
 
+% BOTH estimators live in one file: results.G.(estimator).(mode)(animal) and
+% results.C.(estimator).(mode). Only the RF toggle is in the filename.
 results = struct('G',G,'C',C,'animals',{animals},'dv',dv, ...
     'FREQ_RANGE',FREQ_RANGE,'V_VISUAL',V_VISUAL, ...
     'PIX_PER_DEG',PIX_PER_DEG,'RF_DATE',RF_DATE,'SCREEN_XY',SCREEN_XY, ...
-    'RF_VALID_ONLY',RF_VALID_ONLY,'ESTIMATOR',ESTIMATOR, ...
+    'RF_VALID_ONLY',RF_VALID_ONLY,'ESTIMATORS',{ESTIMATORS},'EST_INFO',EST_INFO, ...
     'metrics',{metrics},'cmode',{cmode},'Vunit',{Vunit},'nPerm',nPerm,'alpha',alpha);
-save(fullfile(res_dir, ['phase_alignment' tag '.mat']),'results','-v7.3');
-fprintf('\nSaved figures + results under %s\n', out_dir);
+save(fullfile(res_dir, ['stimulus_loc_wave' tag '.mat']),'results','-v7.3');
+fprintf('\nSaved under %s :\n  stimulus_loc_grids%s.pdf   (de-rotation R, both estimators)\n', out_dir, tag);
+for ei = 1:numel(ESTIMATORS)
+    fprintf('  stimulus_loc_gain%s%s.pdf   (gain dR, %s)\n', ...
+        EST_INFO.(ESTIMATORS{ei}).tag, tag, EST_INFO.(ESTIMATORS{ei}).short);
+end
 
 %% =====================================================================
 %% Helpers
+%%
+%%  align_grid* = ESTIMATOR 'phase'      PHASE ALIGNMENT
+%%      Input : pref_phase + coh_mag, i.e. nPos PRE-AVERAGED per-location
+%%              vectors (the trials are already gone).
+%%      R     : weighted RESULTANT LENGTH over those locations.
+%%              NOT a phase coherence — a circular-concentration measure.
+%%              R0 runs high (~0.8-0.93) because a handful of angles are
+%%              easily concentrated.
+%%      Uses  : S(p,f)/n_p implicitly, weighted by |c_p| ~ 1/sqrt(n_p)
+%%              -> fewer-trial locations get LARGER weight.
+%%
+%%  coh_grid*  = ESTIMATOR 'coherence'   PHASE COHERENCE
+%%      Input : S(p,f) = raw complex sums over the TRIALS at each location.
+%%      R     : a genuine PHASE COHERENCE over all trials, each de-rotated by
+%%              its own location's predicted lag. At k=0 it equals
+%%              Phase_coherence/functions/phase_coherence.m with locations
+%%              pooled (normaliser /W instead of /nTrials, so R is in [0,1]).
+%%      Uses  : S(p,f) raw -> every trial counts exactly once.
+%%
+%%  Everything else is shared: both return the same six outputs, both define
+%%  R0 as their own statistic at k=0, both feed the identical gain / null /
+%%  threshold / pooling code. R values are NOT comparable between the two.
 %% =====================================================================
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid(pref, coh, coh_sig, f_use, fHz, d, Vs, MIN_LOC, nPerm)
+% ESTIMATOR 'phase' (PHASE ALIGNMENT), mode 'visual'. INCOHERENT across channels.
 % R(f,v)  = mean over coherence-sig channels of the DE-ROTATED resultant
 %           across stimulus locations (de-rotate each location by 2pi f d/v).
 % R0(f)   = the same resultant with NO rotation (k=0, i.e. v->inf): the
@@ -700,11 +833,11 @@ for fi = 1:nF
         if rb - R0(fi) > gnull_max_running(b), gnull_max_running(b) = rb - R0(fi); end
     end
 end
-Rnull_max = null_max_running;
-Gnull_max = gnull_max_running;
+[Rnull_max, Gnull_max] = null_guard(null_max_running, gnull_max_running, nPerm);
 end
 
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid_coherent(pref, coh, coh_sig, f_use, fHz, d, Dc, Vs, MIN_LOC, nPerm)
+% ESTIMATOR 'phase' (PHASE ALIGNMENT), mode 'visual_coherent'.
 % COHERENT combination across channels: test ONE cortical wave in which BOTH
 % the stimulus-location eccentricity d_p AND the electrode RF eccentricity
 % Dc_c contribute the same wave phase k*distance (k = 2*pi*f/v):
@@ -727,8 +860,19 @@ Dc = Dc(:);
 
 % one shared shuffle per permutation, over locations AND over channels,
 % reused across every (f,v) cell -> synchronised null + grid-wide max-stat.
+% NaN-SAFE: channels with no finite Dc (RF_VALID_ONLY drops the Extrapolated
+% centres) are EXCLUDED from the observed set by useC, but an unrestricted
+% randperm would shuffle one of them INTO a used slot, making that permutation
+% NaN. NaN > rb is false, so the running max would stay -inf and every cell
+% would come out "significant" against thr = -inf. Permute only among the
+% finite-geometry channels and leave the NaN slots where they are.
+okC = isfinite(Dc(:)).'; iOK = find(okC); iNo = find(~okC);
 permP = zeros(nPerm, nPos); permC = zeros(nPerm, nCh);
-for b = 1:nPerm, permP(b,:) = randperm(nPos); permC(b,:) = randperm(nCh); end
+for b = 1:nPerm
+    permP(b,:)   = randperm(nPos);
+    permC(b,iOK) = iOK(randperm(numel(iOK)));
+    permC(b,iNo) = iNo;
+end
 null_max_running  = -inf(nPerm,1);
 gnull_max_running = -inf(nPerm,1);
 
@@ -775,11 +919,11 @@ for fi = 1:nF
         if rb - R0(fi) > gnull_max_running(b), gnull_max_running(b) = rb - R0(fi); end
     end
 end
-Rnull_max = null_max_running;
-Gnull_max = gnull_max_running;
+[Rnull_max, Gnull_max] = null_guard(null_max_running, gnull_max_running, nPerm);
 end
 
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid_arrival(pref, coh, coh_sig, f_use, fHz, d, a, Vs, MIN_LOC, nPerm)
+% ESTIMATOR 'phase' (PHASE ALIGNMENT), mode 'visual_arrival'.
 % ARRIVAL-TIME model, INCOHERENT across channels.
 %   R_c(f,v) = | Σ_p w_cp e^{i(φ_cp − k(d_p + a(c,p)))} | / Σ_p w_cp ,
 %   R(f,v)   = mean over coherence-significant channels of R_c ,   k = 2πf/v.
@@ -811,8 +955,16 @@ Gnull_max = nan(nPerm, 1);
 Rnull     = nan(nF, nV, nPerm);   % full null grid, kept for cross-animal pooling
 Gnull     = nan(nF, nV, nPerm);
 
+% NaN-SAFE: same issue as align_grid_coherent — channels whose arrival row
+% a(c,:) is not finite (RF_VALID_ONLY) must not be shuffled into a used slot,
+% or the whole permutation goes NaN and thr collapses to -inf.
+okC = all(isfinite(a),2).'; iOK = find(okC); iNo = find(~okC);
 permP = zeros(nPerm, nPos); permC = zeros(nPerm, nChAll);
-for b = 1:nPerm, permP(b,:) = randperm(nPos); permC(b,:) = randperm(nChAll); end
+for b = 1:nPerm
+    permP(b,:)   = randperm(nPos);
+    permC(b,iOK) = iOK(randperm(numel(iOK)));
+    permC(b,iNo) = iNo;
+end
 null_max_running  = -inf(nPerm,1);
 gnull_max_running = -inf(nPerm,1);
 
@@ -858,16 +1010,17 @@ for fi = 1:nF
         if rb - R0(fi) > gnull_max_running(b), gnull_max_running(b) = rb - R0(fi); end
     end
 end
-Rnull_max = null_max_running;
-Gnull_max = gnull_max_running;
+[Rnull_max, Gnull_max] = null_guard(null_max_running, gnull_max_running, nPerm);
 end
 
 % =====================================================================
 % TRIAL-level estimators. Same three modes, same outputs, same nulls as the
 % align_grid* family above — only R is defined differently:
 %
-%   phase estimator :  R from the per-location PREFERRED PHASES (coh_mag-weighted)
-%   trial estimator :  R = |c|, c = (1/W)*SUM over trials y*exp(i(phi - k*dist))
+%   'phase'     PHASE ALIGNMENT — R = resultant of the per-location PREFERRED
+%               PHASES (coh_mag-weighted). Not a coherence.
+%   'coherence' PHASE COHERENCE — R = |c|, c = (1/W)*SUM over TRIALS
+%               y*exp(i(phi - k*dist)). A coherence in the Phase_coherence/ sense.
 %
 % Everything works off the per-location complex sums produced by
 % functions/trial_position_sums_chan.m:
@@ -879,8 +1032,12 @@ end
 % with all locations pooled, so R0 here is a coherence in the familiar sense.
 % =====================================================================
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = ...
-        trial_grid(Ssum, Sperm, Wch, coh_sig, f_use, fHz, d, Vs, nPerm)
-% INCOHERENT across channels — the trial-level twin of align_grid.
+        coh_grid(Ssum, Sperm, Wch, coh_sig, f_use, fHz, d, Vs, nPerm)
+% ESTIMATOR 'coherence' (PHASE COHERENCE), mode 'visual'. The trial-level twin
+% of align_grid: same de-rotation, same modes, same null — but R here is a real
+% phase coherence over trials, not a resultant of pre-averaged location vectors.
+% R0 = |sum_p S(p,f)| / W is exactly the Phase_coherence/ number, locations
+% pooled. INCOHERENT across channels (|.| per channel, then averaged).
 nF = numel(f_use); nV = numel(Vs);
 [Robs, R0, Rnull, Gnull] = deal(nan(nF,nV), nan(nF,1), nan(nF,nV,nPerm), nan(nF,nV,nPerm));
 null_max_running = -inf(nPerm,1); gnull_max_running = -inf(nPerm,1);
@@ -910,7 +1067,8 @@ end
 end
 
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = ...
-        trial_grid_coherent(Ssum, Sperm, Wch, coh_sig, f_use, fHz, d, Dc, Vs, nPerm)
+        coh_grid_coherent(Ssum, Sperm, Wch, coh_sig, f_use, fHz, d, Dc, Vs, nPerm)
+% ESTIMATOR 'coherence' (PHASE COHERENCE), mode 'visual_coherent'.
 % COHERENT across channels — the trial-level twin of align_grid_coherent.
 % Channels are summed complex (per-channel phase kept), each de-rotated by its
 % own k*Dc, so the per-electrode delay is testable. Same shuffle logic: the
@@ -951,7 +1109,8 @@ end
 end
 
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = ...
-        trial_grid_arrival(Ssum, Sperm, Wch, coh_sig, f_use, fHz, d, a, Vs, nPerm)
+        coh_grid_arrival(Ssum, Sperm, Wch, coh_sig, f_use, fHz, d, a, Vs, nPerm)
+% ESTIMATOR 'coherence' (PHASE COHERENCE), mode 'visual_arrival'.
 % ARRIVAL model, INCOHERENT — the trial-level twin of align_grid_arrival.
 % De-rotates by k*(d_p + a(c,p)); a varies across locations within a channel,
 % so it survives the per-channel |.| exactly as in the phase estimator.
@@ -992,7 +1151,8 @@ end
 end
 
 function [Rnull_max, Gnull_max] = null_guard(rm, gm, nPerm)
-% Same guard as the align_grid* family: never return -inf/NaN silently.
+% Shared by BOTH helper families (align_grid* and coh_grid*): never return
+% -inf/NaN silently. A -inf threshold marks every cell significant.
 if ~all(isfinite(rm))
     warning(['%d/%d permutations produced no finite statistic — the max-stat ' ...
              'threshold is INVALID. Usual cause: no usable channels at any frequency.'], ...
@@ -1003,7 +1163,7 @@ end
 
 function [Ssum, Sperm, Wch] = get_trial_sums(base, animalName, dv, nCh, nPerm, force)
 % Build (via one SLURM job per channel) and aggregate the per-location complex
-% sums S(c,p,f) the trial estimator runs on. Re-uses saved sums when present,
+% sums S(c,p,f) the 'coherence' estimator runs on. Re-uses saved sums when present,
 % so re-running the analysis does not re-submit the cluster jobs.
 data_dir = fullfile(base, ['results_' animalName], 'multi_lin_reg', 'cp10_till_100');
 sum_dir  = fullfile(base, ['results_' animalName], 'scanning', 'trial_position_sums', 'cp10_till_100', dv);
