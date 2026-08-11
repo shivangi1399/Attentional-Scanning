@@ -1,78 +1,47 @@
 % =====================================================================
-% ERP LATENCY TEST — does the phase gradient correspond to a real TIME delay?
+% ERP LATENCY TEST -- does the phase gradient correspond to a real TIME delay?
 %
-% WHY THIS SCRIPT EXISTS
-% ----------------------
-% Every test in this folder so far measures PHASE. Phase alone cannot separate
-% a propagating signal from a fixed spatial phase offset, because at a SINGLE
-% frequency the two are the same object:
+% Every other test in this folder measures phase, and phase alone cannot
+% separate propagation from a fixed spatial offset: at a single frequency
+% cos(2*pi*f*t - k*x) is a wave at v = 2*pi*f/k for any k, real or artefactual.
+% The separation is cross-frequency:
+%     real propagation  fixed time delay tau = d/v -> lag 2*pi*f*tau -> k ∝ f
+%     fixed offset      fixed phase lag, same at every f          -> k const
 %
-%     signal(x,t) = cos(2*pi*f*t - k*x)     is a wave at v = 2*pi*f/k
-%                                            for ANY k, real or artefactual.
+% This script measures tau directly in the time domain from the stimulus-locked
+% ERP -- no wrapping, no frequency ambiguity, no k-vs-v confound -- then asks
+% whether it predicts the observed phase gradient:
+%     predicted d(phi)/d(distance) at f = 2*pi*f * (dtau/ddistance)
+%     match    -> the phase tilt IS conduction delay -> real traveling wave
+%     no match -> phase tilt with no corresponding time delay, not propagation
+% It is the only measurement in the folder that reads time rather than the same
+% pref_phase matrix, so it is the only one that can disagree with the others.
 %
-% The separation is a cross-frequency one:
+% TWO AXES, TWO QUESTIONS -- both run by default.
+%   'cortical'     latency vs position along the array (mm), projected on the
+%                  propagation direction cortical_planar_wave_PGD.m fitted
+%                  -> cortical propagation.
+%   'retinotopic'  latency vs RF eccentricity (deg), foveal -> peripheral, via
+%                  elec_rf_deg, the same frame as stimulus_loc_traveling_wave.m
+%                  -> the scanning question.
 %
-%     real propagation  -> fixed TIME delay tau = d/v
-%                       -> phase lag = 2*pi*f*tau  GROWS with f  ->  k ∝ f
-%     fixed offset      -> fixed PHASE lag, same at every f      ->  k const
+% CAVEAT: ERP latency is propagation of the EVOKED response, while the phase
+% analyses measure ONGOING oscillation; these need not be the same process. A
+% match is strong evidence for propagation, but a null does not by itself
+% refute a wave in ongoing activity. Report it that way.
 %
-% This script measures tau DIRECTLY, in the time domain, from the
-% stimulus-locked ERP. No phase wrapping, no frequency ambiguity, no k-vs-v
-% confound. It then asks the decisive question:
+% DATA  <base>/results_<animal>/<session>/clean_lfp.mat -> `clean_data`, a
+%   FieldTrip raw structure: .trial {1 x nTrials} each [nChan x nTime], .time
+%   (0 = stimulus event), .label, .trialinfo (col 16/17 = target x/y in
+%   fixation-centred px), .fsample.
+%   V4 channels map onto the canonical 1..64 slots BY LABEL NUMBER ('V4-n' ->
+%   slot n for hermes, n-64 for klecks), so channel i here is channel i in
+%   phase_progression.mat. Not by sorted position: sessions are missing
+%   different subsets of channels, so position would put a different electrode
+%   in row i in different sessions. Absent channels stay NaN and contribute no
+%   trials, exactly as Phase_combine_sessions.m does. See v4_channel_slots.
 %
-%     does the measured tau PREDICT the observed phase gradient?
-%         predicted d(phi)/d(distance) at frequency f  =  2*pi*f * (dtau/ddistance)
-%     MATCH    -> the phase tilt IS conduction delay -> real traveling wave
-%     NO MATCH -> phase tilt exists with no corresponding time delay
-%                 -> not propagation
-%
-% TWO AXES, TWO DIFFERENT QUESTIONS (do not conflate them)
-% -------------------------------------------------------
-%   AXIS_MODE = 'cortical'  latency vs position along the array (mm), projected
-%                           on the propagation direction theta that
-%                           cortical_planar_wave_PGD.m already fitted.
-%                           -> tests CORTICAL propagation (the §2/§4 question)
-%   AXIS_MODE = 'retinotopic'  latency vs RF eccentricity (deg), foveal ->
-%                           peripheral, using elec_rf_deg (same frame as
-%                           stimulus_loc_traveling_wave.m).
-%                           -> tests the SCANNING/retinotopic question (§5)
-% Both are run by default.
-%
-% WHY THIS TEST EXISTS
-% -------------------------
-% It is the only measurement in the folder that reads TIME directly rather
-% than phase. Every other test reads the same pref_phase matrix, so they can
-% only corroborate each other. This one can disagree with all of them.
-%
-% CAVEAT
-% -----------------------
-% ERP latency measures propagation of the EVOKED response. The phase analyses
-% measure ONGOING oscillation. These need not be the same process. A MATCH is
-% strong evidence for propagation; a NULL does not by itself refute a wave in
-% ongoing activity. Report it that way.
-%
-% DATA
-% ----
-%   <base>/results_<animal>/<session>/clean_lfp.mat  -> variable `clean_data`,
-%       a FieldTrip raw structure:
-%           .trial      {1 x nTrials} each [nChan x nTime]
-%           .time       {1 x nTrials} each [1 x nTime], 0 = stimulus event
-%           .label      {nChan x 1}
-%           .trialinfo  [nTrials x nCols]  col 16/17 = target x/y (fix-centred px)
-%           .fsample    Hz
-%   V4 channels are mapped onto the canonical 1..64 slots BY LABEL NUMBER
-%   ('V4-n' -> slot n for hermes, n-64 for klecks), so channel i here is
-%   channel i in phase_progression.mat. The offsets are verified against that
-%   file's empty channels — see v4_channel_slots.
-%
-%   NOT by sorted position: sessions are missing different subsets of the 64
-%   V4 channels (hermes 60/64, klecks 62/64, and WHICH ones varies), so a
-%   positional sort would put a different electrode in row i in different
-%   sessions. Absent channels are left NaN for that session and simply
-%   contribute no trials, exactly as Phase_combine_sessions.m does when it
-%   builds the 64-channel phase array. See v4_channel_slots.
-%
-% Output:
+% OUTPUT
 %   Plots/scanning/erp_latency/cp10_till_100/<dv>/erp_latency.pdf
 %   results_combined/scanning/erp_latency/cp10_till_100/<dv>/erp_latency.mat
 % =====================================================================
@@ -131,31 +100,26 @@ ch_row = grid_rows - mod((1:nChTot)' - 1, grid_rows);
 XY     = [ch_col, ch_row] * SPACING_MM;         % nCh x 2, mm
 
 % =====================================================================
-% ASSUMPTIONS THAT MUST BE CHECKED BEFORE TRUSTING ANY OUTPUT
+% ASSUMPTIONS TO CHECK BEFORE TRUSTING THE OUTPUT
 % =====================================================================
-% (1) clean_data.time is zeroed on the STIMULUS event that phase_progression.m
-%     also used. If it is zeroed on trial start or on the response instead,
-%     every latency here is offset by a constant — harmless for the SLOPE
-%     (which is all that matters) but the absolute numbers are meaningless.
-%     -> the script prints the time axis of the first session; eyeball it.
-% (2) Channel slot matches phase_progression.mat 1:1. VERIFIED, not assumed:
-%     the slots absent from every session here reproduce that file's
-%     zero-trial channels exactly, in both animals (see v4_channel_slots).
-%     Expected coverage, for comparison with what the script prints:
-%
-%        hermes   31 sessions   57-61 of 64 channels each
-%                 never present: 48, 64      (zero trials in phase_progression)
-%                 sometimes missing: 22, 37, 43, 49, 55, 56, 63
-%        klecks   25 sessions   61-62 of 64 channels each
-%                 never present: 45          (zero trials in phase_progression)
-%                 slot 64 exists in ONE session only (20170906) -> 68 trials
-%
-%     A DIFFERENT set here means the label convention has changed upstream;
-%     stop and re-derive it rather than reinterpreting the numbers.
-%     -> sanity check: the ERP should look like an ERP on most channels, and
-%        the channel-mean ERP should have a clear evoked deflection.
-% (3) Sessions are pooled by concatenating trials. If sessions differ in
-%     electrode drift this adds noise but no bias in the slope.
+% (1) clean_data.time is zeroed on the same STIMULUS event phase_progression.m
+%     used. Zeroing on trial start or on the response instead offsets every
+%     latency by a constant -- harmless for the slope, which is all that
+%     matters, but the absolute numbers are then meaningless. The script prints
+%     the first session's time axis; eyeball it.
+% (2) Channel slots match phase_progression.mat 1:1. Verified, not assumed: the
+%     slots absent from every session reproduce that file's zero-trial channels
+%     exactly in both animals (see v4_channel_slots). Expected coverage, to
+%     compare with what the script prints:
+%        hermes  31 sessions, 57-61 of 64 channels each. Never present 48, 64;
+%                sometimes missing 22, 37, 43, 49, 55, 56, 63.
+%        klecks  25 sessions, 61-62 of 64 channels each. Never present 45; slot
+%                64 in one session only (20170906, 68 trials).
+%     A different set means the upstream label convention changed -- stop and
+%     re-derive it rather than reinterpreting the numbers. Sanity check: the
+%     channel-mean ERP should show a clear evoked deflection.
+% (3) Sessions are pooled by concatenating trials. Electrode drift between
+%     sessions adds noise to the slope but no bias.
 % =====================================================================
 
 L = struct();
@@ -294,9 +258,9 @@ valid = find(arrayfun(@(s) ~isempty(s.animal), L));
 %% ─── THE DECISIVE COMPARISON: does tau predict the phase gradient? ───
 % A measured latency gradient dtau/dd (s per mm) predicts a phase gradient
 %       k_pred(f) = 2*pi*f * dtau/dd        rad/mm
-% that GROWS LINEARLY WITH FREQUENCY. Compare against k_corr(f) that
-% cortical_planar_wave_PGD.m measured. If the observed k is flat while k_pred
-% rises, the phase tilt is not a time delay.
+% that grows linearly with frequency. Compare with the k_corr(f) measured by
+% cortical_planar_wave_PGD.m: an observed k that stays flat while k_pred rises
+% means the phase tilt is not a time delay.
 fprintf('\n================ PHASE-GRADIENT PREDICTION ================\n');
 for ia = valid
     if ~isfield(L(ia),'cortical') || isempty(L(ia).cortical), continue; end
@@ -371,41 +335,32 @@ s = arrayfun(@(x) fullfile(x.folder, x.name), d, 'uni', 0);
 end
 
 function [rows, slots, nBad] = v4_channel_slots(labels, animal, nChTot)
-% Map this session's V4 channels onto the CANONICAL 1..nChTot slots.
+% Map this session's V4 channels onto the canonical 1..nChTot slots BY LABEL
+% NUMBER, not by sorted position: sessions do not all contain all 64 V4
+% channels (hermes 60/64, klecks 62/64) and which ones are missing varies, so
+% position would put a different electrode in row i in different sessions and
+% silently average channel 43 onto 44 when pooling. This mirrors how the phase
+% pipeline builds its 64-channel array
+% (Phase_analysis/masters_code/Phase_combine_sessions.m): each present channel
+% goes to its own slot, absent channels are left NaN, never compacted. Slot i
+% here is channel i in phase_progression.mat.
 %
-% WHY NOT A PLAIN SORT. Sessions do not all contain all 64 V4 channels —
-% cleaning drops a few, and WHICH ones differs per session (hermes: 60/64,
-% missing e.g. 43 in one session and 37 in another; klecks: 62/64). Sorting
-% the present labels and using position would therefore put a different
-% physical electrode in row i in different sessions, and silently average
-% channel 43 onto channel 44 when pooling. Map by LABEL NUMBER instead.
+%   hermes   V4-n -> slot n        (labels 1..64,   blank ->  64)
+%   klecks   V4-n -> slot n - 64   (labels 65..128, blank -> 128)
 %
-% This mirrors how the phase pipeline builds its 64-channel array
-% (Phase_analysis/masters_code/Phase_combine_sessions.m): chan_orig = 1:64,
-% each present channel written to its own slot, absent channels left NaN —
-% never compacted. Slot i here is channel i in phase_progression.mat.
+% The klecks offset is -64, not -63: clean_lfp.mat already holds the incremented
+% numbering, not mapping_lfp.m's pre-increment 64..127. Verified against
+% phase_progression.mat on three exact matches -- hermes zero-trial channels
+% {48, 64} equal the slots absent from every session; klecks V4-109 is absent
+% from all 25 sessions -> slot 45, the only klecks channel with zero trials;
+% klecks V4-128 appears in one session -> slot 64, which has 68 trials against
+% ~1400 elsewhere. With -63 every klecks channel would sit one slot off,
+% rotating the array by one electrode. Re-run the check if the upstream
+% pipeline changes.
 %
-%   hermes   label V4-n     -> slot n         (labels run   1..64,  blank ->  64)
-%   klecks   label V4-n     -> slot n - 64    (labels run  65..128, blank -> 128)
-%
-% THE KLECKS OFFSET IS -64, NOT -63. clean_lfp.mat already holds the
-% INCREMENTED numbering (65..128), not mapping_lfp.m's pre-increment 64..127.
-% Verified against phase_progression.mat, which is what these slots must line
-% up with — three independent facts, all exact:
-%
-%   hermes  channels with zero trials              = {48, 64}
-%           slots absent from every session here   = {48, 64}      match
-%   klecks  V4-109 is absent from all 25 sessions -> slot 45
-%           the ONLY klecks channel with zero trials = 45          match
-%   klecks  V4-128 appears in one session (20170906) -> slot 64
-%           channel 64 has only 68 trials, vs ~1400 elsewhere      match
-%
-% With -63 every klecks channel would sit one slot off, silently rotating the
-% array by one electrode. Re-run that check if the upstream pipeline changes.
-%
-%   rows   row indices into D.label / D.trial for the channels we keep
-%   slots  canonical slot each of those rows maps to (same length as rows)
-%   nBad   V4 labels whose number fell outside 1..nChTot (should be 0)
+%   rows   row indices into D.label / D.trial for the channels kept
+%   slots  canonical slot for each of those rows
+%   nBad   V4 labels numbered outside 1..nChTot (should be 0)
 labels = labels(:);
 isV4 = startsWith(strtrim(labels), 'V4-');
 V4i  = find(isV4);

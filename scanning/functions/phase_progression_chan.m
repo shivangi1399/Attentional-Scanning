@@ -80,16 +80,14 @@ if nPos >= 2 && sum(valid) >= 2*nPos
     mean_step  = mstep_o;
 
     % --- Synchronised permutation null (matches the sampling pipeline) ---
-    % Seed each shuffle by the PERMUTATION INDEX (not the channel) and apply
-    % the SAME position-label relabelling to every channel. base_trials and
-    % base_labels are identical across channels for a given DV, and the RNG
-    % is seeded by perm index, so perm k is the same trial->position
-    % reassignment in every channel. Averaging this null across channels
-    % therefore preserves the spatial (cross-channel) dependence of the
-    % array LFP. Without this — i.e. shuffling each channel independently —
-    % the channel-average null is far too tight (its spread shrinks like
-    % 1/sqrt(nCh) assuming channel independence, which is false for array
-    % LFP) and the channel-average significance is anti-conservative.
+    % Seed each shuffle by the PERMUTATION INDEX, not the channel, and apply the
+    % same position-label relabelling in every channel: base_trials and
+    % base_labels are identical across channels for a given DV, so perm k is the
+    % same trial->position reassignment everywhere and the channel-average null
+    % preserves the spatial dependence of the array LFP. Shuffling each channel
+    % independently would shrink that null like 1/sqrt(nCh) -- assuming channel
+    % independence, which is false here -- and make the channel-average
+    % significance anti-conservative.
     % (cf. multiple_linear_reg/functions/regress_perm_R_pos.m: rng(2025+perm_idx).)
     base_trials = find(pos_idx_all > 0);     % identical across channels for this DV
     base_labels = pos_idx_all(base_trials);

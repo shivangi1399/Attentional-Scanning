@@ -1,202 +1,94 @@
 % =====================================================================
-% Traveling-wave detection by PHASE-VECTOR ALIGNMENT across stimulus
-% locations, swept over frequency × speed ("rotate-to-overlap"
-% test).
+% Traveling-wave test across STIMULUS LOCATIONS. De-rotate each location's
+% phase by theta(p) = 2*pi*f*d(p)/v and sweep a (frequency x speed) grid for
+% the parameters that make the locations align.
 %
-% Idea : each stimulus location p has a preferred-phase vector e^{iφ(p)}. 
-% If processing scans the locations as a TRAVELING WAVE of speed v, then 
-% the phase at each location is delayed relative to a reference by 
-% Δt(p) = d(p)/v, i.e. rotated by
-%       θ(p) = 2π f d(p) / v .
-% De-rotating each vector by θ(p) should make all locations OVERLAP
-% (resultant R → 1) — but only at the wave's true (f, v). So we sweep a
-% grid of (frequency × speed) and read off the parameter region where the
-% de-rotated vectors align. A GENUINE wave shows a band of high R at a
-% (near-)constant speed ACROSS frequencies (speed is frequency-independent),
-% which is the key discriminator from a chance per-frequency alignment.
+% d(p) = stimulus eccentricity in deg, v in deg/s. A genuine wave gives a band
+% of high resultant R at a frequency-independent speed; a chance per-frequency
+% alignment does not. Gain dR = R(f,v) - R0(f), with R0 the same statistic at
+% k = 0 (no wave assumed), isolates the wave-specific ramp.
 %
-% Everything is in VISUAL degrees / deg-per-second. d(p) = stimulus
-% eccentricity (deg). Three ways to combine channels are computed:
+% THREE MODES -- what distance goes into k*d. Null, thresholds and figures are
+% shared; only the de-rotation differs.
+%   visual           R_c = |SUM_p w_p e^{i(phi_p - k d_p)}| / SUM_p w_p, then
+%                    averaged over coherence-significant channels. The
+%                    per-channel |.| cancels each channel's constant offset,
+%                    and with it any per-electrode delay.
+%   visual_coherent  de-rotate by k*(d_p + Dc_c), Dc_c = electrode RF
+%                    eccentricity, and sum coherently across channels, so the
+%                    per-electrode delay is visible. Tests one wave sweeping
+%                    outward from the fovea, independent of the stimulus.
+%                    Assumes a common phase reference; unmodelled offsets can
+%                    only lower R, so a band is trustworthy but a null is
+%                    ambiguous.
+%   visual_arrival   de-rotate by k*(d_p + a(c,p)), a = visual-field
+%                    separation between channel c's RF centre and location p:
+%                    the stimulus lands on its retinotopic patch and spreads
+%                    at the same speed v. a(c,p) varies across locations
+%                    within a channel, so it survives the per-channel |.| and
+%                    can be fitted incoherently -- the only mode expressing
+%                    "the wave starts where the stimulus is" while staying
+%                    robust to per-channel offsets. |.|_c projects out the row
+%                    mean, so only the position-varying part is tested.
 %
-%   VISUAL (incoherent) — the wave is across STIMULUS LOCATIONS only:
-%     per channel:  R_c(f,v) = | Σ_p w_p e^{i(φ_p - θ_p)} | / Σ_p w_p ,
-%                   θ_p = 2πf d_p / v  (w_p = coherence magnitude). The |·|
-%                   is taken PER CHANNEL, so each channel's own constant phase
-%                   offset cancels and channels can be averaged — but that
-%                   also makes any per-electrode delay INVISIBLE.
-%     grid       :  R(f,v) = mean over coherence-significant channels.
+% TWO ESTIMATORS -- what is vector-summed. Both run in one pass and share the
+% de-rotation, the modes, R0, dR, the null and the thresholds.
+%   'phase'      resultant of the nPos per-location preferred-phase vectors
+%                from phase_progression.m, weighted by coh_mag:
+%                R_c = |SUM_p coh_mag e^{i(pref_phase - k d_p)}| / SUM_p coh_mag.
+%                Not a coherence: the trials were averaged away upstream, and
+%                coh_mag ~ 1/sqrt(n_p) gives locations with fewer trials more
+%                weight. R0 ~ 0.80-0.93 here, leaving a ceiling of 0.07-0.20.
+%   'coherence'  one trial-level coherence, every trial de-rotated by the
+%                prediction for its own location:
+%                c(f,v) = SUM_t y_t e^{i(phi_tf - k d_p(t))} / SUM_t |y_t|.
+%                At k = 0 this is exactly phase_coherence.m with locations
+%                pooled. R0 ~ 0.06-0.08, so there is headroom for a gain.
+%   R is not comparable between the two -- judge each against its own
+%   threshold. A lower R0 under 'coherence' is headroom, not a weaker result.
 %
-%   VISUAL_COHERENT — ONE cortical wave across BOTH stimulus locations AND
-%     electrodes. Each channel also has an RF-centre eccentricity Dc_c (deg,
-%     from the Gaussian RF fit), and the wave delays the electrode by k·Dc_c:
-%       R(f,v) = | Σ_{c,p} w_cp e^{i(φ_cp − k d_p − k Dc_c)} | / Σ w_cp ,
-%     summed COHERENTLY across channels (per-channel phase kept), so the
-%     per-electrode delay is testable. Assumes phases share a common clock;
-%     unmodelled offsets can only LOWER R, so a band is trustworthy but a
-%     null is ambiguous. Kept alongside the incoherent grid as a comparison.
+%   Implementation: the rotation depends on a trial only through its location,
+%   so both estimators collapse onto per-location complex sums
+%   S(p,f) = SUM over trials at p of y_t*e^{i phi_tf}, and the three modes are
+%   re-weightings of S. functions/trial_position_sums_chan.m produces S for the
+%   observed labels and all nPerm shuffles, one SLURM job per channel; the
+%   cache keeps the name 'trial_position_sums' (only the estimator was renamed
+%   'trial' -> 'coherence').
 %
-%   VISUAL_ARRIVAL (incoherent) — the ARRIVAL-TIME model: the stimulus lands
-%     on its retinotopic patch and the information spreads outward at the SAME
-%     speed v, so electrode c hears about location p only after a(c,p)/v, where
-%     a(c,p) = visual-field separation between c's RF centre and location p:
-%       R_c(f,v) = | Σ_p w_cp e^{i(φ_cp − k d_p − k a(c,p))} | / Σ_p w_cp ,
-%       R(f,v)   = mean over coherence-significant channels of R_c .
-%     Unlike Dc_c, a(c,p) VARIES across locations within a channel (it dips
-%     where the stimulus falls on that channel's RF), so it survives the
-%     per-channel |·| and can be fitted INCOHERENTLY — the only mode that
-%     expresses "the wave starts where the stimulus is" while keeping
-%     robustness to per-channel offsets and an interpretable null. Because
-%     |·|_c deletes any channel constant, this tests the position-VARYING part
-%     of the arrival delay (the row mean of a is projected out).
+% Per animal throughout, never pooled: grid -> animals -> mean grid plus
+% "significant in both" replication. Null: one synchronised shuffle of the
+% location<->distance assignment (plus electrode<->Dc for coherent,
+% electrode<->a(c,:) for arrival) shared across the grid, max over the grid ->
+% max-statistic threshold. R0 is shuffle-invariant, so dR gets a clean null too.
 %
-% Also computed for each mode: the de-rotation GAIN dR = R(f,v) − R0(f),
-% where R0 is the un-rotated (k=0) coherence — the "actual" coherence with no
-% wave assumed; dR isolates the wave-specific phase ramp.
+% COORDINATE FRAME. Stimulus positions and RF centres are stored with different
+% origins, so both are converted to fixation-centred degrees, (0,0) = fovea:
+%   stimulus   trialinfo col-16/17 are already fixation-centred pixels
+%              -> xy_deg = [col16 col17] / ppd
+%   RF centre  *_channel_target_summary.txt holds SCREEN pixels
+%              -> xy_deg = ([RF_Center_X RF_Center_Y] - [840 525]) / ppd
+% ppd = PIX_PER_DEG, the per-animal rig calibration. Both then give
+% eccentricity = hypot(x,y), so electrode-minus-stimulus is frame-safe.
+% (Resolved from code/RF_Mapping/chan_loc_mua.m.)
 %
-% =====================================================================
-% TWO ESTIMATORS — 'phase' (PHASE ALIGNMENT) vs 'coherence' (PHASE COHERENCE)
-% =====================================================================
-% Setting: ESTIMATORS = {'phase','coherence'} — BOTH are computed in one run.
+% RF_VALID_ONLY keeps only channels whose RF centre is a real Gaussian fit;
+% 'Extrapolated' centres were filled from array neighbours or a plane fit after
+% a failed fit, i.e. inferred rather than measured. Affects visual_coherent and
+% visual_arrival only. Output names carry a '_validRF' tag when it is on, so
+% both variants coexist on disk.
 %
-% The three modes above describe WHAT is de-rotated (which distance goes into
-% k*d). The ESTIMATOR describes WHAT IS BEING VECTOR-SUMMED, and therefore what
-% the number R actually means. This is the single most important distinction in
-% this script, so it is spelled out here in full.
-%
-% -------------------------------------------------------------------------
-%  BOTH estimators share, identically:
-%       the de-rotation          k = 2*pi*f/v, spin by k*d
-%       the three modes          visual / visual_coherent / visual_arrival
-%       the baseline             R0 = the same statistic at k = 0
-%       the gain                 dR = R - R0        <-- COMMON TO BOTH.
-%                                                       dR is NOT what
-%                                                       distinguishes them.
-%       the null                 synchronised location-label shuffle
-%       thresholds, replication, pooling, figures
-%  They differ in ONE thing: what the vectors being summed are.
-% -------------------------------------------------------------------------
-%
-%   ESTIMATOR 'phase'  —  PHASE ALIGNMENT  (two-stage; the original estimator)
-%     Stage 1 (upstream, phase_progression.m): per-location coherence across
-%       trials,  c(ch,f,p) = mean over trials at location p of y*exp(i*phase)
-%       -> pref_phase = angle(c),  coh_mag = |c|.
-%     Stage 2 (here): vector-sum those nPos PER-LOCATION PREFERRED-PHASE
-%       vectors, one per location:
-%         R_c(f,v) = | SUM_p coh_mag * exp(i(pref_phase - k*d_p)) | / SUM_p coh_mag
-%
-%     *** R IS NOT A PHASE COHERENCE. *** It is a weighted RESULTANT LENGTH
-%     over locations — a circular-concentration measure answering "how
-%     similar are these nPos angles after de-rotation?". The trial-level
-%     coherence enters only as the WEIGHT coh_mag; the trials themselves have
-%     already been averaged away in stage 1.
-%     Consequence: R0 = "how similar were the preferred phases already", which
-%     runs ~0.80-0.93 in this data. High by construction (a handful of angles
-%     are easily concentrated), leaving a gain ceiling of only 0.07-0.20.
-%
-%   ESTIMATOR 'coherence'  —  PHASE COHERENCE  (one-stage, trial-level)
-%     No per-location stage at all. Every TRIAL is rotated by the model's
-%     prediction for the location THAT TRIAL had, and ONE coherence is taken
-%     over the whole trial set:
-%       c(f,v) = (1/W) * SUM over ALL TRIALS y_t*exp(i(phi_tf - k*d_p(t))) ,
-%       W = SUM_t |y_t| ,   R = |c| .
-%
-%     *** R IS A GENUINE PHASE COHERENCE *** — at k = 0 it is EXACTLY the
-%     measure computed by Phase_coherence/functions/phase_coherence.m, with all
-%     stimulus locations pooled (only the normaliser differs: /W instead of
-%     /nTrials, so R is bounded in [0,1]).
-%     Consequence: R0 is a coherence in the familiar sense (~0.06-0.08 here),
-%     so there is real headroom for a gain to appear.
-%
-%     NOTE: no per-location coherences are ever computed or compared. Locations
-%     enter only through which rotation each trial receives.
-%
-%   Side by side, at the level of the sum:
-%       'phase'      SUM over nPos LOCATION VECTORS  (trials pre-averaged)
-%       'coherence'  SUM over ALL TRIALS             (no pre-averaging)
-%
-%   And the one-line algebraic difference:
-%       'phase'      uses  S(p,f)/n_p   the per-location MEAN, weighted by
-%                                       |c_p| ~ 1/sqrt(n_p)  -> a location with
-%                                       FEWER trials gets a LARGER weight
-%       'coherence'  uses  S(p,f)       the raw SUM -> every trial counts once
-%
-%   R VALUES ARE NOT COMPARABLE BETWEEN THE TWO. Judge each against its own
-%   threshold. A lower R0 under 'coherence' is good news (headroom), not a
-%   weaker result.
-%
-%   Implementation of 'coherence': the de-rotation factor depends on a trial
-%   only through its location, so the estimator collapses onto per-location
-%   complex SUMS
-%       S(p,f) = SUM over trials at p of y_t*exp(i*phi_tf)
-%       c(f,v) = (1/W) * SUM_p S(p,f)*exp(-i*k*d_p) ,
-%   and all three modes reduce to re-weightings of S. One SLURM job per channel
-%   (functions/trial_position_sums_chan.m) produces S for the observed labels
-%   and for all nPerm shuffles; everything else is done here from S.
-%   (The worker and its on-disk cache keep the name 'trial_position_sums'
-%   because that is literally what they hold — per-TRIAL sums grouped by
-%   position. Only the ESTIMATOR was renamed 'trial' -> 'coherence'.)
-%
-% Pipeline, PER ANIMAL (never pooled): grid -> animals -> mean grid +
-%   "significant in both" replication.
-% Significance: permute the location<->distance assignment (plus electrode<->Dc
-%   for the coherent mode, or electrode<->a(c,:) rows for the arrival mode)
-%   with a SINGLE synchronised shuffle shared
-%   across the grid, recompute, take its max -> max-statistic threshold that
-%   corrects across the entire (f,v) grid. R0 is shuffle-invariant, giving a
-%   clean max-stat null on the gain dR too.
-%
-% COORDINATE FRAME (resolved from code/RF_Mapping/chan_loc_mua.m):
-%   The stimulus positions and the electrode RF centres are stored with
-%   DIFFERENT origins in the raw files, so both are converted to ONE common
-%   frame here — FIXATION-CENTRED DEGREES, with (0,0) = fovea:
-%     stimulus   trialinfo col-16/17 are ALREADY fixation-centred pixels
-%                (chan_loc_mua.m:212 does x_screen = x_target_pix + 840),
-%                so:   xy_deg = [col16, col17] / ppd.
-%     RF centre  the *_channel_target_summary.txt stores SCREEN pixels
-%                (the mapping code wrote xRF_screen = ... + 840), so the
-%                screen centre must be SUBTRACTED first:
-%                      xy_deg = ([RF_Center_X, RF_Center_Y] - [840 525]) / ppd.
-%   Both then yield eccentricity = hypot(x,y) deg measured from the same
-%   origin, so any electrode-minus-stimulus difference is frame-safe.
-%   ppd = PIX_PER_DEG, the PER-ANIMAL rig calibration (the raw .RF sessInfo
-%   did not store ppd). VISUAL distance d(p) = stimulus eccentricity (deg).
-%
-% RF_VALID_ONLY toggle (affects VISUAL_COHERENT and VISUAL_ARRIVAL — the two
-%   modes that use RF centres; plain VISUAL never does and is unchanged by it):
-%   keep only channels whose RF centre is a real
-%   2-D Gaussian fit (Status == 'Valid_Gaussian'). Channels marked
-%   'Extrapolated' had a FAILED fit and their centre was filled in from the
-%   median of their 8-connected array neighbours, or from a plane fit across
-%   the array (RF_Mapping/mapping_lfp.m:513) — i.e. inferred under a
-%   retinotopic-smoothness assumption rather than measured. Output file names
-%   and figure titles carry a '_validRF' tag when the toggle is on, so both
-%   variants can coexist on disk.
-%
-% OUTPUT — THREE figures per run. Names carry the '_validRF' tag when
-% RF_VALID_ONLY is on; the two gain figures also carry the estimator name.
-%   Plots/scanning/stimulus_loc_wave/cp10_till_100/<dv>/
-%     stimulus_loc_grids[_validRF].pdf
-%         THE DE-ROTATION R. 6 rows = 3 modes x 2 estimators (estimator named
-%         in every panel title, because R means different things in the two
-%         blocks), 4 cols = animals + mean/replication + pooled z.
-%         The pooled z column lives HERE ONLY — see note below.
-%     stimulus_loc_gain_phase[_validRF].pdf
-%         Gain dR = R - R0 for the PHASE-ALIGNMENT estimator. 3 rows x 3 cols.
-%     stimulus_loc_gain_coherence[_validRF].pdf
-%         Gain dR = R - R0 for the PHASE-COHERENCE estimator. 3 rows x 3 cols.
+% OUTPUT -- three figures, in
+% Plots/scanning/stimulus_loc_wave/cp10_till_100/<dv>/
+%   stimulus_loc_grids.pdf       R. 6 rows = 3 modes x 2 estimators (estimator
+%                                named in every title, since R differs between
+%                                them), 4 cols = animals, mean/replication,
+%                                pooled z.
+%   stimulus_loc_gain_<est>.pdf  dR for one estimator, 3 x 3.
 %   results_combined/scanning/stimulus_loc_wave/cp10_till_100/<dv>/
-%       stimulus_loc_wave[_validRF].mat (BOTH estimators in one file:
-%                                        results.G.(estimator).(mode)(animal))
-%
-% WHY THE GAIN FIGURES HAVE NO POOLED COLUMN. Because gain = R - R0(f) and R0
-% depends on neither speed nor the shuffle, the pooled standardised statistics
-% are algebraically IDENTICAL:
-%       muG = muR - R0 ,  sdG = sdR
-%       zG  = (R - R0 - muG)/sdG = (R - muR)/sdR = zR
-% (verified on saved output: max|zR - zG| = 1.75e-13, identical thresholds).
-% A pooled gain panel would therefore be a pixel-for-pixel copy of the pooled R
-% panel, so it is drawn once, on the grids figure. The PER-ANIMAL R and gain
-% panels are genuinely different and both are kept.
+%     stimulus_loc_wave.mat      both estimators: results.G.(est).(mode)(animal)
+% The gain figures carry no pooled column: R0 depends on neither speed nor
+% shuffle, so zG = (R - R0 - (muR - R0))/sdR = zR (verified on saved output,
+% max|zR - zG| = 1.75e-13). It would duplicate the pooled R panel.
 % =====================================================================
 
 clearvars; close all; clc
@@ -222,14 +114,12 @@ rng(2025);
 % Experiment calibration
 PIX_PER_DEG   = struct('hermes', 53.24, 'klecks', 50.56);   % pixels per degree (per-animal rig calibration)
 
-% Electrode RF centres (for the COHERENT mode). Each channel's RF centre comes
-% from the Gaussian-fit centre already written by RF_Mapping/mapping_lfp.m into
-% the per-channel summary table (the SAME file cortical_planar_wave_PGD.m
-% reads). Its RF_Center_X/Y are SCREEN pixels, so elec_rf_deg subtracts the
-% screen centre (840, 525) before /ppd to reach the fixation-centred degrees
-% the stimulus positions already use — see the COORDINATE FRAME note above.
-% Both animals are 8x8 = 64-channel arrays and the summary has 64 rows 1:1
-% with the phase-progression channel index, so no channel remap is needed.
+% Electrode RF centres (COHERENT and ARRIVAL modes). Read from the per-channel
+% summary table written by RF_Mapping/mapping_lfp.m -- the same file
+% cortical_planar_wave_PGD.m uses. RF_Center_X/Y are screen pixels, so
+% elec_rf_deg subtracts the screen centre before /ppd; see COORDINATE FRAME
+% above. Both arrays are 8x8 and the summary's 64 rows match the
+% phase-progression channel index 1:1, so no remap is needed.
 RF_DATE   = '20170829';   % RF session both animals share
 SCREEN_XY = [1680 1050];  % screen pixels; fixation/fovea at the centre
 
@@ -240,17 +130,10 @@ SCREEN_XY = [1680 1050];  % screen pixels; fixation/fovea at the centre
 % uses RF centres and is unchanged either way.
 RF_VALID_ONLY = true;
 
-% WHICH ESTIMATORS TO RUN — see the TWO ESTIMATORS block in the header.
-% Both are computed in a SINGLE run; the grids figure shows them side by side
-% and each gets its own gain figure.
-%   'phase'     PHASE ALIGNMENT.  R = resultant length of the nPos per-location
-%               preferred-phase vectors (from phase_progression.mat).
-%               NOT a phase coherence — a circular-concentration measure.
-%   'coherence' PHASE COHERENCE.  R = coherence over ALL trials after each
-%               trial is de-rotated by its own location's predicted lag. At
-%               k = 0 this IS the Phase_coherence/ measure, locations pooled.
-%               Needs ph_all_sess.mat and one SLURM job per channel.
-% Order matters only for figure row order. Set to a single name to run one.
+% Which estimators to run -- see TWO ESTIMATORS in the header. Both are
+% computed in one pass; the grids figure shows them side by side and each gets
+% its own gain figure. 'coherence' additionally needs ph_all_sess.mat and one
+% SLURM job per channel. Order sets figure row order; a single name runs one.
 ESTIMATORS = {'phase','coherence'};
 
 % Force re-submission of the per-channel SLURM jobs that build the per-location
@@ -283,37 +166,15 @@ res_dir = fullfile(base,'results_combined','scanning','stimulus_loc_wave','cp10_
 if ~exist(out_dir,'dir'), mkdir(out_dir); end
 if ~exist(res_dir,'dir'), mkdir(res_dir); end
 
-% Three combination modes, all in VISUAL degrees / deg-per-second. They differ
-% ONLY in the distance each de-rotates by; null, thresholds and figures are
-% shared. Writing the de-rotation as a table over (channel c, location p):
-%
-%   visual          : INCOHERENT — de-rotate by k*d_p. The same number for
-%                     every channel at a given location. |resultant| per
-%                     channel over locations, then averaged (per-channel phase
-%                     offset discarded; robust but blind to per-electrode
-%                     delays).
-%   visual_coherent : COHERENT — de-rotate by k*(d_p + D_c), D_c = electrode
-%                     RF eccentricity (deg). D_c has no p in it, so its row of
-%                     the table is FLAT: a channel-constant phase, which a
-%                     per-channel |.| would delete exactly — hence this mode
-%                     MUST sum coherently across channels. Tests ONE wave
-%                     sweeping outward from the fovea, independent of where
-%                     the stimulus is. Assumes a common phase reference, so a
-%                     null is ambiguous (offsets can only LOWER R).
-%   visual_arrival  : INCOHERENT — de-rotate by k*(d_p + a(c,p)), where
-%                     a(c,p) = visual-field separation between electrode c's
-%                     RF centre and stimulus location p (deg). This is the
-%                     ARRIVAL-TIME model: the stimulus lands on its
-%                     retinotopic patch and the information spreads outward at
-%                     the same speed v, so electrode c hears about location p
-%                     after a(c,p)/v. Each channel's row DIPS at the location
-%                     that falls on its own RF, so the term varies across
-%                     locations within a channel and SURVIVES the per-channel
-%                     |.| — the only mode that can express "the wave starts
-%                     where the stimulus is" while staying robust to
-%                     per-channel offsets. Note |.|_c projects out the row
-%                     mean of a, so this tests the position-VARYING part of
-%                     the arrival delay.
+% Three modes, all in visual degrees / deg-per-second, differing only in the
+% distance de-rotated by (see the header for the full statement):
+%   visual          k*d_p, |resultant| per channel then averaged -- robust to
+%                   per-channel offsets, blind to per-electrode delays.
+%   visual_coherent k*(d_p + D_c). D_c has no p in it, so a per-channel |.|
+%                   would delete it exactly -- this mode must sum coherently.
+%   visual_arrival  k*(d_p + a(c,p)). a dips at the location falling on the
+%                   channel's own RF, so it varies within a channel and
+%                   survives the per-channel |.|.
 metrics = {'visual','visual_coherent','visual_arrival'};
 Vsets   = {V_VISUAL, V_VISUAL, V_VISUAL};
 Vunit   = {'deg/s','deg/s','deg/s'};
@@ -368,13 +229,11 @@ for ia = 1:numel(animals)
         rf_note, sum(isfinite(ecc_elec)), nCh, sum(rf_valid), ...
         min(ecc_elec,[],'omitnan'), max(ecc_elec,[],'omitnan'));
 
-    % ARRIVAL-DISTANCE table a(c,p) for the visual_arrival mode [nCh x nPos]:
-    % visual-field separation between electrode c's RF centre and stimulus
-    % location p — a straight difference, legitimate only because both are now
-    % in the SAME fixation-centred frame (see the COORDINATE FRAME note). Row c
-    % dips at the location that lands on channel c's RF. No per-row referencing
-    % is applied: a row-constant offset is deleted by the per-channel |.|
-    % anyway, so it cannot affect R.
+    % ARRIVAL-DISTANCE table a(c,p) for visual_arrival [nCh x nPos]: visual-field
+    % separation between channel c's RF centre and location p. A straight
+    % difference, legitimate only because both are now in the same
+    % fixation-centred frame. Row c dips at the location landing on its RF. No
+    % per-row referencing: the per-channel |.| deletes a row constant anyway.
     a_arr = hypot(rf_deg(:,1) - stim_deg(:,1).', rf_deg(:,2) - stim_deg(:,2).');
     if RF_VALID_ONLY, a_arr(~rf_valid, :) = NaN; end
     fprintf('  arrival distance a(c,p): %d/%d channels usable | %.2f-%.2f deg\n', ...
@@ -422,18 +281,14 @@ for ia = 1:numel(animals)
         sig = Robs >= thr;
 
         % ── Standardise against this animal's OWN null, cell by cell ──────
-        % The animals sit on very different scales (R0 ~0.80 vs ~0.93, and
-        % thresholds differ 4-6x), so a raw cross-animal average would simply
-        % be dominated by the animal with the larger numbers. Converting each
-        % cell to a z-score against its own permutation distribution puts both
-        % animals in comparable units, which is what the pooled test below
-        % averages. The same permutations are used to centre/scale and to build
-        % the pooled threshold — standard practice for a standardised
-        % ("pseudo-t") max-stat permutation test.
-        % 'omitnan' is essential: mean/std do NOT skip NaN by default, so a
-        % single NaN permutation at one cell would make that cell's z NaN for
-        % EVERY permutation, and the NaN then spreads through the cross-animal
-        % sum below (NaN + finite = NaN).
+        % The animals sit on very different scales (R0 ~0.80 vs ~0.93,
+        % thresholds 4-6x apart), so a raw cross-animal average would be
+        % dominated by the larger numbers. The same permutations centre/scale
+        % here and build the pooled threshold below -- a standardised
+        % ("pseudo-t") max-stat test.
+        % 'omitnan' is essential: mean/std do not skip NaN, so one NaN
+        % permutation would make that cell NaN for every permutation and the
+        % NaN would spread through the cross-animal sum.
         muR = mean(Rnull,3,'omitnan'); sdR = std(Rnull,0,3,'omitnan');
         muG = mean(Gnull,3,'omitnan'); sdG = std(Gnull,0,3,'omitnan');
         zR_obs  = (Robs  - muR) ./ max(sdR, eps);
@@ -483,33 +338,27 @@ end
 valid = find(arrayfun(@(s) ~isempty(s.animal), G.(ESTIMATORS{1}).(metrics{1})));
 
 %% ─── Combine animals: (a) REPLICATION, (b) POOLED standardised test ──
-% Two different criteria, reported side by side. They answer different
-% questions and are NOT interchangeable:
+% Two criteria, reported side by side, answering different questions.
 %
 %   REPLICATION  repl = sig(hermes) AND sig(klecks), cell by cell. Each animal
-%                was already max-stat corrected over its whole grid, so a
-%                replicated cell is very strong evidence. It cannot be driven
-%                by one animal — but it also cannot aggregate weak evidence,
-%                and it has low power. PRIMARY criterion.
+%                is already max-stat corrected over its grid, so a replicated
+%                cell is strong evidence and cannot be driven by one animal.
+%                It cannot aggregate weak evidence and has low power. PRIMARY.
 %
-%   POOLED       average the STANDARDISED grids across animals and test that
-%                average against its own max-stat null, built by pairing
-%                permutation b of one animal with permutation b of the other
-%                (legitimate because the animals are independent, so the
-%                pairing is arbitrary and samples the product null):
-%                    Zobs(f,v)   = mean_a z_a(f,v)
-%                    Znull(f,v,b)= mean_a z_a_null(f,v,b)
-%                    thr_pool    = (1-alpha) quantile of max over grid of Znull
-%                This AGGREGATES evidence, so it has more power — but with only
-%                two animals a "pooled significant" cell can be ~100% one
-%                animal. SECONDARY criterion; always report which animal drives
-%                it (the per-animal z at that cell is printed below).
+%   POOLED       average the standardised grids and test against their own
+%                max-stat null, pairing permutation b of one animal with
+%                permutation b of the other (legitimate: the animals are
+%                independent, so the pairing samples the product null):
+%                    Zobs(f,v)    = mean_a z_a(f,v)
+%                    Znull(f,v,b) = mean_a z_a_null(f,v,b)
+%                    thr_pool     = (1-alpha) quantile of max over grid
+%                More power, but with two animals a significant cell can be
+%                almost entirely one of them. SECONDARY -- the per-animal z at
+%                that cell is printed below.
 %
-% NOTE: with n=2 neither criterion supports a population-level inference —
-% between-animal variance is not estimable. Replication is simply the more
-% conservative descriptive rule.
-% Done SEPARATELY FOR EACH ESTIMATOR — the two never share a null or a
-% threshold, because their R values live on different scales.
+% With n=2 neither supports a population-level inference; between-animal
+% variance is not estimable. Run separately per estimator -- the two never
+% share a null or a threshold, their R values being on different scales.
 C = struct();
 for ei = 1:numel(ESTIMATORS)
   est = ESTIMATORS{ei};
@@ -577,11 +426,10 @@ for ei = 1:numel(ESTIMATORS)
 end
 
 %% ─── Figure: freq × speed alignment heatmaps ─────────────────────────
-% MATLAB's default TeX interpreter renders '_' as a subscript, which mangles
-% the mode names ('visual_coherent' -> "visual" + subscript c) and rf_note
-% ('Valid_Gaussian'). Escape underscores rather than switching the interpreter
-% off, so the intentional TeX (\DeltaR, R_0, 2\pi) still renders. Titles are
-% cell arrays = one line per element, which stops them overlapping.
+% Escape underscores rather than switching the TeX interpreter off, so mode
+% names survive ('visual_coherent' would render as a subscript) while the
+% intentional TeX (\DeltaR, R_0, 2\pi) still renders. Cell-array titles put one
+% line per element, which stops them overlapping.
 esc = @(s) strrep(s, '_', '\_');
 
 % Map a speed in physical units onto the index-based y axis (shared by both
@@ -590,11 +438,10 @@ esc = @(s) strrep(s, '_', '\_');
 speeds_to_idx = @(sp,sv) interp1(sv, 1:numel(sv), sp, 'linear', NaN);
 
 %% ─── FIGURE 1: the DE-ROTATION R grids, both estimators ──────────────
-% Rows = 3 modes x 2 estimators (estimator block named in every panel title,
-% because R means a DIFFERENT THING in the two blocks and the values are NOT
-% comparable between them). Cols = animals + mean/replication + pooled z.
-% Colour limits are set PER ESTIMATOR BLOCK from that block's own data — a
-% fixed [0 1] scale renders the phase-coherence block (R ~ 0.08) as flat blue.
+% Rows = 3 modes x 2 estimators (named in every title -- R means a different
+% thing in the two blocks). Cols = animals + mean/replication + pooled z.
+% Colour limits are per estimator block: a fixed [0 1] scale renders the
+% phase-coherence block (R ~ 0.08) as flat blue.
 nEst = numel(ESTIMATORS);
 ncol = numel(valid)+2;                       % animals + mean + pooled z
 nrow = nEst*numel(metrics);
@@ -664,11 +511,10 @@ saveas(f1, fullfile(out_dir, ['stimulus_loc_grids' tag '.pdf']));
 
 %% ─── FIGURES 2..n: de-rotation GAIN, ONE FIGURE PER ESTIMATOR ────────
 % dR(f,v) = R(f,v) - R0(f): the speeds at which de-rotating beats not rotating.
-% A wave = significant positive gain (white contour) along a near-CONSTANT best
-% speed (black line) across frequencies; a rising black line means constant
-% wavenumber, i.e. a fixed phase offset rather than a propagating wave.
-% NO pooled column here — the pooled gain z equals the pooled R z exactly, and
-% is drawn once on the grids figure (see the header note).
+% A wave = significant positive gain (white contour) along a near-constant best
+% speed (black line); a rising black line means constant wavenumber, i.e. a
+% fixed phase offset rather than propagation.
+% No pooled column -- the pooled gain z equals the pooled R z (see header).
 ncol_g = numel(valid)+1;                     % animals + mean/replication
 for ei = 1:nEst
   est = ESTIMATORS{ei};
@@ -743,40 +589,32 @@ end
 %% =====================================================================
 %% Helpers
 %%
-%%  align_grid* = ESTIMATOR 'phase'      PHASE ALIGNMENT
-%%      Input : pref_phase + coh_mag, i.e. nPos PRE-AVERAGED per-location
-%%              vectors (the trials are already gone).
-%%      R     : weighted RESULTANT LENGTH over those locations.
-%%              NOT a phase coherence — a circular-concentration measure.
-%%              R0 runs high (~0.8-0.93) because a handful of angles are
-%%              easily concentrated.
-%%      Uses  : S(p,f)/n_p implicitly, weighted by |c_p| ~ 1/sqrt(n_p)
-%%              -> fewer-trial locations get LARGER weight.
+%%  align_grid*  ESTIMATOR 'phase'. Input: pref_phase + coh_mag, i.e. nPos
+%%               pre-averaged per-location vectors. R = weighted resultant
+%%               length over those locations, not a coherence; R0 runs high
+%%               (~0.8-0.93) because a handful of angles concentrate easily.
+%%               Weighted by |c_p| ~ 1/sqrt(n_p), so fewer-trial locations
+%%               count more.
+%%  coh_grid*    ESTIMATOR 'coherence'. Input: S(p,f), the raw complex sums
+%%               over trials at each location. R = a genuine phase coherence
+%%               over all trials, each de-rotated by its own location's lag;
+%%               at k=0 it equals phase_coherence.m with locations pooled.
+%%               Every trial counts once.
 %%
-%%  coh_grid*  = ESTIMATOR 'coherence'   PHASE COHERENCE
-%%      Input : S(p,f) = raw complex sums over the TRIALS at each location.
-%%      R     : a genuine PHASE COHERENCE over all trials, each de-rotated by
-%%              its own location's predicted lag. At k=0 it equals
-%%              Phase_coherence/functions/phase_coherence.m with locations
-%%              pooled (normaliser /W instead of /nTrials, so R is in [0,1]).
-%%      Uses  : S(p,f) raw -> every trial counts exactly once.
-%%
-%%  Everything else is shared: both return the same six outputs, both define
-%%  R0 as their own statistic at k=0, both feed the identical gain / null /
-%%  threshold / pooling code. R values are NOT comparable between the two.
+%%  Otherwise identical: same six outputs, R0 defined as each one's own
+%%  statistic at k=0, same gain / null / threshold / pooling code. R values are
+%%  not comparable between the two.
 %% =====================================================================
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid(pref, coh, coh_sig, f_use, fHz, d, Vs, MIN_LOC, nPerm)
-% ESTIMATOR 'phase' (PHASE ALIGNMENT), mode 'visual'. INCOHERENT across channels.
-% R(f,v)  = mean over coherence-sig channels of the DE-ROTATED resultant
-%           across stimulus locations (de-rotate each location by 2pi f d/v).
-% R0(f)   = the same resultant with NO rotation (k=0, i.e. v->inf): the
-%           "actual" location coherence with no wave assumed. This is the
-%           baseline the de-rotation gain  dR(f,v)=R(f,v)-R0(f)  is measured
-%           against — dR isolates the wave-specific phase ramp and is
-%           invariant to locations merely sharing a preferred phase.
-% Returns observed grid + no-rotation baseline + per-perm grid maxima of
-%   R  (absolute null)  and  of  dR=R-R0  (gain null). R0 does not use d, so
-% it is unchanged by the location<->distance shuffle -> a clean gain null.
+% ESTIMATOR 'phase', mode 'visual'. Incoherent across channels.
+% R(f,v) = mean over coherence-sig channels of the de-rotated resultant across
+%          stimulus locations.
+% R0(f)  = the same resultant unrotated (k=0, v->inf): the baseline the gain
+%          dR = R - R0 is measured against, so dR is invariant to locations
+%          merely sharing a preferred phase.
+% Returns the observed grid, the baseline, and per-perm grid maxima of R and of
+% dR. R0 does not use d, so the location<->distance shuffle leaves it
+% unchanged -> a clean gain null.
 nF = numel(f_use); nV = numel(Vs); nPos = numel(d);
 Robs      = nan(nF, nV);
 R0        = nan(nF, 1);
@@ -837,18 +675,16 @@ end
 end
 
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid_coherent(pref, coh, coh_sig, f_use, fHz, d, Dc, Vs, MIN_LOC, nPerm)
-% ESTIMATOR 'phase' (PHASE ALIGNMENT), mode 'visual_coherent'.
-% COHERENT combination across channels: test ONE cortical wave in which BOTH
-% the stimulus-location eccentricity d_p AND the electrode RF eccentricity
-% Dc_c contribute the same wave phase k*distance (k = 2*pi*f/v):
+% ESTIMATOR 'phase', mode 'visual_coherent'. One cortical wave in which both
+% the stimulus eccentricity d_p and the electrode RF eccentricity Dc_c
+% contribute k*distance, k = 2*pi*f/v:
 %   R(f,v) = | Σ_{c,p} w_cp e^{i(φ_cp − k d_p − k Dc_c)} | / Σ w_cp
 %          = | (e^{-ik·Dc})ᵀ · A · e^{-ik·d} | / Σ w_cp .
-% Unlike align_grid this does NOT take |·| per channel, so the per-electrode
-% delay is now VISIBLE (but unmodelled per-channel offsets can only lower R —
-% never fabricate it — so a positive band is trustworthy, a null ambiguous).
-% Channels without a finite Dc are dropped. R0 = the k=0 coherent resultant
-% (no wave). Null shuffles BOTH d→location and Dc→channel with a SINGLE
-% shared shuffle per permutation (synchronised across the whole grid).
+% No per-channel |·|, so the per-electrode delay is visible -- but unmodelled
+% offsets can only lower R, so a band is trustworthy and a null ambiguous.
+% Channels without a finite Dc are dropped. R0 = the k=0 coherent resultant.
+% Null shuffles d→location and Dc→channel together, one shared shuffle per
+% permutation.
 nF = numel(f_use); nV = numel(Vs); nPos = numel(d); nCh = numel(Dc);
 Robs      = nan(nF, nV);
 R0        = nan(nF, 1);
@@ -858,14 +694,13 @@ Rnull     = nan(nF, nV, nPerm);   % full null grid, kept for cross-animal poolin
 Gnull     = nan(nF, nV, nPerm);
 Dc = Dc(:);
 
-% one shared shuffle per permutation, over locations AND over channels,
-% reused across every (f,v) cell -> synchronised null + grid-wide max-stat.
-% NaN-SAFE: channels with no finite Dc (RF_VALID_ONLY drops the Extrapolated
-% centres) are EXCLUDED from the observed set by useC, but an unrestricted
-% randperm would shuffle one of them INTO a used slot, making that permutation
-% NaN. NaN > rb is false, so the running max would stay -inf and every cell
-% would come out "significant" against thr = -inf. Permute only among the
-% finite-geometry channels and leave the NaN slots where they are.
+% one shared shuffle per permutation, over locations AND channels, reused
+% across every (f,v) cell -> synchronised null + grid-wide max-stat.
+% NaN-safe: channels with no finite Dc are excluded by useC, but an
+% unrestricted randperm would shuffle one into a used slot and make that
+% permutation NaN. NaN > rb is false, so the running max would stay -inf and
+% every cell would come out significant. Permute only among the
+% finite-geometry channels.
 okC = isfinite(Dc(:)).'; iOK = find(okC); iNo = find(~okC);
 permP = zeros(nPerm, nPos); permC = zeros(nPerm, nCh);
 for b = 1:nPerm
@@ -923,30 +758,23 @@ end
 end
 
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid_arrival(pref, coh, coh_sig, f_use, fHz, d, a, Vs, MIN_LOC, nPerm)
-% ESTIMATOR 'phase' (PHASE ALIGNMENT), mode 'visual_arrival'.
-% ARRIVAL-TIME model, INCOHERENT across channels.
+% ESTIMATOR 'phase', mode 'visual_arrival'. Arrival-time model, incoherent
+% across channels.
 %   R_c(f,v) = | Σ_p w_cp e^{i(φ_cp − k(d_p + a(c,p)))} | / Σ_p w_cp ,
 %   R(f,v)   = mean over coherence-significant channels of R_c ,   k = 2πf/v.
 %
-% a [nCh x nPos] is the visual-field separation (deg) between electrode c's RF
-% centre and stimulus location p. Unlike align_grid_coherent's D_c, a(c,p)
-% VARIES across locations within a channel (it dips where the stimulus lands on
-% that channel's RF), so it is NOT removed by the per-channel |.| — which is
-% why this model can be fitted incoherently and therefore needs no
-% common-reference assumption. Only the position-varying part of a is tested:
-% |.|_c deletes the row mean of a exactly as it deletes any channel constant.
+% a [nCh x nPos] is the visual-field separation (deg) between channel c's RF
+% centre and location p. Unlike Dc_c it varies across locations within a
+% channel (it dips where the stimulus lands on that channel's RF), so the
+% per-channel |.| does not remove it and no common-reference assumption is
+% needed. |.|_c deletes the row mean, so only the position-varying part is
+% tested. One v serves both terms, so the grid stays frequency x speed.
 %
-% Vs = v is shared by BOTH terms (the scan across locations and the spread from
-% the driven patch), so no extra free parameter is introduced — the grid stays
-% frequency x speed.
-%
-% Null: ONE synchronised shuffle per permutation, reused across every (f,v)
-% cell, permuting the geometry two ways at once —
-%   columns  location <-> (d_p, a(:,p))  : breaks "phase tracks the stimulus"
-%   rows     channel  <-> a(c,:)         : breaks "the dip is at the RIGHT
-%                                           electrode"
-% R0 (k=0) uses neither d nor a, so it is shuffle-invariant -> clean gain null.
-% (R0 here is numerically identical to align_grid's R0, as it must be.)
+% Null: one synchronised shuffle per permutation, permuting the geometry two
+% ways -- columns location <-> (d_p, a(:,p)), breaking "phase tracks the
+% stimulus"; rows channel <-> a(c,:), breaking "the dip is at the right
+% electrode". R0 (k=0) uses neither d nor a, so it is shuffle-invariant and
+% numerically identical to align_grid's R0.
 nF = numel(f_use); nV = numel(Vs); nPos = numel(d); nChAll = size(a,1);
 Robs      = nan(nF, nV);
 R0        = nan(nF, 1);
@@ -1014,22 +842,17 @@ end
 end
 
 % =====================================================================
-% TRIAL-level estimators. Same three modes, same outputs, same nulls as the
-% align_grid* family above — only R is defined differently:
+% TRIAL-level estimators. Same three modes, outputs and nulls as the align_grid*
+% family; only R differs -- here it is a genuine phase coherence over trials,
+% each de-rotated by its own location's predicted lag.
 %
-%   'phase'     PHASE ALIGNMENT — R = resultant of the per-location PREFERRED
-%               PHASES (coh_mag-weighted). Not a coherence.
-%   'coherence' PHASE COHERENCE — R = |c|, c = (1/W)*SUM over TRIALS
-%               y*exp(i(phi - k*dist)). A coherence in the Phase_coherence/ sense.
-%
-% Everything works off the per-location complex sums produced by
-% functions/trial_position_sums_chan.m:
-%       S(c,p,f) = SUM over trials at location p of  y_t*exp(i*phi_tf)
+% Everything works off the per-location complex sums from
+% functions/trial_position_sums_chan.m,
+%       S(c,p,f) = SUM over trials at location p of y_t*exp(i*phi_tf)
 %       W(c)     = SUM over trials of |y_t|
 % because the de-rotation depends on a trial only through its location:
 %       c_c(f,v) = ( 1/W_c ) * SUM_p S(c,p,f)*exp(-i*k*d_p) .
-% At k=0 this is exactly the phase coherence of the phase_coherence/ pipeline
-% with all locations pooled, so R0 here is a coherence in the familiar sense.
+% At k=0 this is the phase_coherence/ measure with all locations pooled.
 % =====================================================================
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = ...
         coh_grid(Ssum, Sperm, Wch, coh_sig, f_use, fHz, d, Vs, nPerm)
@@ -1068,12 +891,10 @@ end
 
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = ...
         coh_grid_coherent(Ssum, Sperm, Wch, coh_sig, f_use, fHz, d, Dc, Vs, nPerm)
-% ESTIMATOR 'coherence' (PHASE COHERENCE), mode 'visual_coherent'.
-% COHERENT across channels — the trial-level twin of align_grid_coherent.
-% Channels are summed complex (per-channel phase kept), each de-rotated by its
-% own k*Dc, so the per-electrode delay is testable. Same shuffle logic: the
-% location relabelling is already synchronised across channels inside Sperm,
-% and Dc is additionally permuted over channels here.
+% ESTIMATOR 'coherence', mode 'visual_coherent'. The trial-level twin of
+% align_grid_coherent: channels summed complex, each de-rotated by its own
+% k*Dc, so the per-electrode delay is testable. The location relabelling is
+% already synchronised across channels inside Sperm; Dc is permuted here.
 nF = numel(f_use); nV = numel(Vs); nCh = numel(Dc); Dc = Dc(:);
 [Robs, R0, Rnull, Gnull] = deal(nan(nF,nV), nan(nF,1), nan(nF,nV,nPerm), nan(nF,nV,nPerm));
 null_max_running = -inf(nPerm,1); gnull_max_running = -inf(nPerm,1);

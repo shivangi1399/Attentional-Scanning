@@ -1,31 +1,29 @@
 % =====================================================================
 % Wave-TYPE classification from saved phase-progression data
 %
-% Phase can be spatially organized in other ways. This script tests,
-% per frequency, which spatial pattern the preferred-phase map looks like:
+% Phase can be spatially organised in more ways than a plane. Per frequency,
+% which pattern does the preferred-phase map look like?
 %
-%   - PLANE / travelling   : phase increases linearly across the array;
-%                            gradient vectors all point the same way.
-%                            Metric: phase-gradient directionality
-%                            PGD = |mean(grad)| / mean(|grad|)  (->1 = planar).
-%   - RADIAL / source-sink : phase increases (source) or decreases (sink)
-%                            from a centre; gradient points radially.
-%                            Metric: net divergence of the gradient field
-%                            (= mean Laplacian of phase). +source / -sink.
-%   - ROTATING / spiral    : phase winds around a centre; gradient
-%                            circulates. Metrics: net curl of the gradient
-%                            field, and the number of PHASE SINGULARITIES
-%                            (2x2 loops whose wrapped phase sums to +/-2*pi).
-%   - SYNCHRONOUS / none   : little spatial gradient at all (mean|grad|
-%                            not above its null) -> no wave.
+%   PLANE / travelling   phase increases linearly across the array, gradient
+%                        vectors all point the same way. Metric: phase-gradient
+%                        directionality PGD = |mean(grad)|/mean(|grad|) (->1).
+%   RADIAL / source-sink phase increases (source) or decreases (sink) from a
+%                        centre, gradient points radially. Metric: net
+%                        divergence (mean Laplacian). + source, - sink.
+%   ROTATING / spiral    phase winds around a centre, gradient circulates.
+%                        Metrics: net curl, and the number of phase
+%                        singularities (2x2 loops whose wrapped phase
+%                        differences sum to +/-2*pi).
+%   SYNCHRONOUS / none   little spatial gradient at all (mean|grad| not above
+%                        its null) -> no wave.
 %
-% IMPORTANT: unlike the plane fit, this works on the WRAPPED phase using
-% local neighbour differences and does NOT 2D-unwrap — global unwrapping
-% would destroy the very singularities a spiral is defined by.
+% Unlike the plane fit, this works on WRAPPED phase using local neighbour
+% differences and does not 2-D unwrap: global unwrapping would destroy the
+% singularities a spiral is defined by.
 %
-% Significance: phases are shuffled across electrode locations and every
-% metric recomputed (same null logic as the speed script). A type is
-% "present" at a frequency if its metric beats the 95th-pctile null.
+% Significance: phases shuffled across electrode locations and every metric
+% recomputed (same null logic as the speed script). A type is present at a
+% frequency if its metric beats the 95th-percentile null.
 %
 % Outputs (Plots/scanning/wave_type/cp10_till_100/<dv>/):
 %   wave_type_vs_freq.pdf   metric vs frequency per animal, with nulls
@@ -113,13 +111,12 @@ for ia = 1:numel(animals)
         nPGD(f,:)=np(:,1)'; nDIV(f,:)=abs(np(:,2))'; nCURL(f,:)=abs(np(:,3))';
     end
 
-    % Significance per wave TYPE, with cluster-based correction across
-    % frequency (a band of contiguous significant freqs survives; isolated
-    % chance pokes don't). IMPORTANT: detection is by DIRECTIONAL metrics
-    % (PGD/div/curl) only — NOT gated on gradient magnitude (GSTR). A slow
-    % planar wave has a small gradient but a consistent direction (high
-    % PGD); gating on magnitude would wrongly discard it. Magnitude/GSTR
-    % only tells us slow-vs-fast, reported separately.
+    % Significance per wave TYPE, cluster-corrected across frequency, so a
+    % band of contiguous significant frequencies survives and isolated chance
+    % pokes do not. Detection uses the DIRECTIONAL metrics (PGD/div/curl) only,
+    % never gated on gradient magnitude (GSTR): a slow planar wave has a small
+    % gradient but a consistent direction, so gating on magnitude would discard
+    % it. GSTR only tells slow from fast, and is reported separately.
     sig_planar = cluster_correct(PGD,       PGD_thr,  nPGD,  alpha);
     sig_radial = cluster_correct(abs(DIV),  DIV_thr,  nDIV,  alpha);
     sig_rot    = cluster_correct(abs(CURL), CURL_thr, nCURL, alpha);

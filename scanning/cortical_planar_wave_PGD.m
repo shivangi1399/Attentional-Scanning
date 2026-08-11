@@ -1,51 +1,41 @@
 % =====================================================================
 % Planar traveling-wave EXISTENCE test (per animal + combined)
 %
-% Asks, per animal: IS there a planar traveling wave, and at WHICH
-% frequencies?
+% Per animal: is there a planar traveling wave, and at which frequencies?
 %
-% Method, per frequency:
-%   - Build the preferred-phase map on the 8x8 array using only
-%     coherence-SIGNIFICANT channels.
-%   - PGD = |mean(grad phi)| / mean(|grad phi|): are the phase-gradient
-%     arrows aligned (1 = planar wave, 0 = random)?
-%   - Significance = shuffle phases across electrodes (null) + CLUSTER
-%     permutation across frequency -> report a BAND, not bins.
+% Per frequency:
+%   - build the preferred-phase map on the 8x8 array from coherence-
+%     SIGNIFICANT channels only;
+%   - PGD = |mean(grad phi)| / mean(|grad phi|): are the gradient arrows
+%     aligned (1 = planar wave, 0 = random)?
+%   - significance: shuffle phases across electrodes, then cluster-permute
+%     across frequency -> report a BAND, not bins.
 %
 % Three views of the same data:
-%   COLLAPSED   positions combined (reliability-weighted circular mean);
-%               a wave survives only if consistent across positions.
-%   PER-POSITION wave fit separately per stimulus position, with a
-%               wave-ORIGIN check (does it radiate from the RF-driven
-%               patch?) and cross-position direction agreement.
-%   CONSENSUS   one merged band = collapsed-sig AND positions agree in
-%               direction AND significant in >= CONSENSUS_MIN_POS positions.
+%   COLLAPSED     positions combined (reliability-weighted circular mean); a
+%                 wave survives only if consistent across positions.
+%   PER-POSITION  fit separately per stimulus position, with a wave-ORIGIN
+%                 check (does it radiate from the RF-driven patch?) and
+%                 cross-position direction agreement.
+%   CONSENSUS     one merged band: collapsed-sig AND positions agree in
+%                 direction AND sig in >= CONSENSUS_MIN_POS positions.
 %
-% Combine animals (never pool channels): REPLICATION (sig in both) +
-% POOLED standardized-PGD evidence. Speed is a flagged secondary readout.
+% Combining animals (channels never pooled): REPLICATION (sig in both) plus
+% pooled standardised-PGD evidence. Speed is a flagged secondary readout.
 %
-% ---------------------------------------------------------------------
-% WHAT THIS SCRIPT DOES NOT ANSWER — does a significant band PROPAGATE?
-%
-% A significant PGD says the phase map is a plane. It does NOT say the
-% plane is moving. PGD is scale-free and is evaluated one frequency at a
-% time, so it cannot tell a traveling wave from a phase offset that is
-% simply frozen in space:
-%
-%   a real wave      = one conduction speed v for every frequency
-%                      -> k = 2*pi*f/v grows in proportion to f
-%   a fixed offset   = one phase offset for every frequency
-%                      -> k constant, so the IMPLIED v = 2*pi*f/k grows with f
-%
-% Both give a clean plane at every single frequency; they differ only in
-% how the ramp scales ACROSS frequency. That question is settled in
-% cortical_planar_wave_derotation.m, whose best-fit speed ridge is fitted
-% to all electrodes at once. Do not try to settle it from the per-frequency
-% v_f printed below: v_f is derived from a local finite-difference gradient
-% whose bias floor (GMAG_null) is a large fraction of the signal, so it is
-% both biased and frequency-dependent in its bias. v_f is reported here as
-% a descriptive readout only, always alongside GMAG_null so the margin over
-% the floor is visible.
+% WHAT THIS DOES NOT ANSWER -- whether a significant band PROPAGATES. PGD says
+% the phase map is a plane, not that the plane is moving; it is scale-free and
+% evaluated one frequency at a time, so it cannot separate
+%   a real wave    one speed v at every frequency -> k = 2*pi*f/v grows with f
+%   a fixed offset one phase offset at every f    -> k constant, so the implied
+%                                                    v = 2*pi*f/k grows with f
+% Both give a clean plane at every single frequency and differ only in how the
+% ramp scales ACROSS frequency, which cortical_planar_wave_derotation.m settles
+% by fitting all electrodes at once. Do not settle it from the per-frequency
+% v_f printed below: v_f comes from a local finite-difference gradient whose
+% bias floor (GMAG_null) is a large fraction of the signal, so it is biased and
+% frequency-dependent in its bias. It is descriptive only, and always reported
+% alongside GMAG_null so the margin over the floor is visible.
 % =====================================================================
 
 clearvars; close all; clc

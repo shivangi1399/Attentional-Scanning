@@ -1,37 +1,26 @@
 function out = trial_position_sums_chan(cfg_fun)
 % Per-channel worker for the TRIAL-LEVEL de-rotation estimator.
 %
-% WHAT THIS COMPUTES AND WHY
-% --------------------------
-% The trial-level estimator asks the de-rotation question directly on the raw
-% trials instead of on the per-position preferred phases:
-%
+% The estimator asks the de-rotation question on the raw trials instead of on
+% the per-position preferred phases:
 %     c(f,v) = ( 1/W ) * SUM over ALL TRIALS  y_t * exp( i*( phi_tf - k*d_p(t) ) )
+% i.e. every trial is rotated by the wave model's prediction for the location
+% that trial had, and one phase coherence is computed over the whole trial set.
+% At k=0 this is exactly the phase_coherence/ measure with all locations pooled.
 %
-% i.e. every trial is rotated by the wave model's prediction for the stimulus
-% location THAT trial had, and one phase coherence is computed over the whole
-% trial set. At k=0 this is exactly the phase coherence of the
-% phase_coherence/ pipeline (all locations pooled, nothing rotated).
-%
-% The de-rotation factor depends on the trial only through its stimulus
-% location, so the whole estimator collapses onto per-location complex SUMS:
-%
+% The de-rotation depends on a trial only through its location, so the whole
+% estimator collapses onto per-location complex sums:
 %     S(p,f) = SUM over trials t at location p of  y_t * exp(i*phi_tf)
 %     c(f,v) = ( 1/W ) * SUM over p  S(p,f) * exp(-i*k*d_p)
+% so this worker needs no speed grid, geometry or mode: it produces S(p,f) for
+% the observed labels and every permutation, and the caller sweeps (frequency x
+% speed) and the three modes cheaply from S. That is what makes the trial-level
+% version affordable.
 %
-% So this worker never needs to know the speed grid, the geometry, or the
-% mode — it only produces S(p,f) for the observed labels and for every
-% permutation. The caller then sweeps (frequency x speed) and the three modes
-% cheaply from S. That is what makes the trial-level version affordable.
-%
-% DIFFERENCE FROM THE PHASE-PROGRESSION (level-2) ESTIMATOR
-% ---------------------------------------------------------
-% The level-2 estimator uses the per-location MEAN, c_p = S(p,:)/n_p, and
-% weights each location by |c_p|. Because |c_p| ~ 1/sqrt(n_p) under noise, a
-% location with FEWER trials receives a LARGER weight there. The trial-level
-% estimator uses the raw sums, so every trial counts exactly once and the
-% weighting is automatically proportional to the evidence each location
-% actually provides.
+% Against the phase-progression (level-2) estimator: that one uses the
+% per-location MEAN c_p = S(p,:)/n_p and weights each location by |c_p|, which
+% goes as 1/sqrt(n_p) under noise, so a location with FEWER trials gets a
+% LARGER weight. The raw sums here make every trial count exactly once.
 %
 % cfg_fun fields:
 %   ichan          - channel index
