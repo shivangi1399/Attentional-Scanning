@@ -1240,7 +1240,8 @@ end
 
 function sig = load_coh_sig_mask(coh_root, nCh, nFreq, alpha)
 % Per-channel coherence-significance mask [nCh x nFreq] (max-stat across
-% frequency), identical to traveling_planar_wave.m / origin script.
+% frequency). Kept identical to the copies in cortical_planar_wave_PGD.m
+% and cortical_planar_wave_derotation.m — change all three together.
 sig = false(nCh, nFreq);
 for ch = 1:nCh
     cfile = fullfile(coh_root, num2str(ch), 'coherence.mat');

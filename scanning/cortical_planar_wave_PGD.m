@@ -25,36 +25,27 @@
 % POOLED standardized-PGD evidence. Speed is a flagged secondary readout.
 %
 % ---------------------------------------------------------------------
-% SLOPE TEST — does a significant PGD band actually PROPAGATE?
+% WHAT THIS SCRIPT DOES NOT ANSWER — does a significant band PROPAGATE?
 %
 % A significant PGD says the phase map is a plane. It does NOT say the
 % plane is moving. PGD is scale-free and is evaluated one frequency at a
 % time, so it cannot tell a traveling wave from a phase offset that is
-% simply frozen in space. To separate them you have to look ACROSS
-% frequency, and the discriminator is how the fitted speed scales:
+% simply frozen in space:
 %
 %   a real wave      = one conduction speed v for every frequency
 %                      -> k = 2*pi*f/v grows in proportion to f
 %   a fixed offset   = one phase offset for every frequency
 %                      -> k constant, so the IMPLIED v = 2*pi*f/k grows with f
 %
-% Both give a clean plane at every single frequency. They differ only in
-% the scaling, so regress log(v) on log(f) over each significant band:
-%
-%   slope_v =  0   ->  v constant        ->  REAL TRAVELING WAVE
-%   slope_v = +1   ->  k constant        ->  FIXED PHASE OFFSET (no propagation)
-%
-%   slope_v + slope_k = 1 identically, because v = 2*pi*f/k means
-%   log v = log f - log k + const. The two columns are one measurement;
-%   slope_k is printed only as an arithmetic check.
-%
-% This is the numerical form of the horizontal-band-vs-diagonal-ridge
-% picture in the de-rotation grids (cortical_planar_wave_derotation.m),
-% and it costs nothing: v_f and k_corr are already computed below.
-%
-% CAVEAT ON THE SLOPE SE: neighbouring frequency bins are not independent
-% (spectral smoothing correlates them), so the printed standard error is
-% optimistic. Use it to compare bands, not as a p-value.
+% Both give a clean plane at every single frequency; they differ only in
+% how the ramp scales ACROSS frequency. That question is settled in
+% cortical_planar_wave_derotation.m, whose best-fit speed ridge is fitted
+% to all electrodes at once. Do not try to settle it from the per-frequency
+% v_f printed below: v_f is derived from a local finite-difference gradient
+% whose bias floor (GMAG_null) is a large fraction of the signal, so it is
+% both biased and frequency-dependent in its bias. v_f is reported here as
+% a descriptive readout only, always alongside GMAG_null so the margin over
+% the floor is visible.
 % =====================================================================
 
 clearvars; close all; clc
@@ -74,15 +65,6 @@ CH_FILTER  = 'significant';       % 'significant' = keep only channels whose pha
 COH_SIG_ALPHA = 0.05;             % per-channel coherence significance level
 SPEED_OK   = [5 100];             % physiologically plausible cortical wave speed (cm/s)
 MIN_CH     = 8;                   % min reliable channels to attempt a map
-MIN_SLOPE_BINS = 4;               % min frequency bins in a band to fit the log(v)~log(f)
-                                  %   slope (see SLOPE TEST below). Fewer than this and
-                                  %   the slope is reported as NaN rather than guessed.
-SLOPE_TOL  = 0.33;                % how close to 0 (or 1) the slope must be to be called
-                                  %   constant-speed (or constant-wavenumber). Slopes in
-                                  %   between are 'ambiguous'; slopes outside BOTH windows
-                                  %   (e.g. +1.4) are labelled separately — they are further
-                                  %   from propagation than a fixed offset, not in between.
-                                  %   Only |slope| <= SLOPE_TOL counts toward the wave tally.
 DO_PER_POSITION = true;           % also test the planar wave SEPARATELY per stimulus position
 CONSENSUS  = true;                % merge collapsed + per-position into ONE "consensus"
                                   % band per animal (needs DO_PER_POSITION). A frequency
@@ -199,40 +181,36 @@ for ia = 1:numel(animals)
     runs = find_runs(sig);
     if isempty(runs), fprintf('    (none)\n'); end
     A(ia).bands = struct('f_lo',{},'f_hi',{},'PGD',{},'dir',{}, ...
-        'grad_radmm',{},'dphi_array_deg',{},'v_med',{},'speed_ok',{},'fracpos',{}, ...
-        'slope_v',{},'slope_k',{},'slope_v_se',{},'r2',{},'nbins',{}, ...
-        'v_lo',{},'v_hi',{},'k_lo',{},'k_hi',{},'verdict',{});
+        'grad_radmm',{},'dphi_array_deg',{},'v_lo',{},'v_hi',{},'v_med',{}, ...
+        'speed_ok',{},'fracpos',{},'floor_ratio',{});
     for r = 1:numel(runs)
         ix = runs{r};
         vmed = median(v_f(ix),'omitnan');
+        vlo  = v_f(ix(1)); vhi = v_f(ix(end));
         ok = vmed>=SPEED_OK(1) && vmed<=SPEED_OK(2);
         dmean = rad2deg(angle(mean(exp(1i*DIR(ix)),'omitnan')));
         kmean = mean(k_corr(ix),'omitnan');              % rad/mm
         dphi  = mean(dphi_array(ix),'omitnan');          % deg across array
-        fprintf(['    %.1f–%.1f Hz | mean PGD=%.2f | dir=%3.0f° | grad=%.3f rad/mm ' ...
-                 '(%.0f° across array) | %.0f%% pos organised | speed~%.0f cm/s %s\n'], ...
-            freq(ix(1)), freq(ix(end)), mean(PGD(ix)), dmean, kmean, dphi, ...
-            100*mean(fracpos(ix),'omitnan'), vmed, ...
-            ternary(ok,'(plausible)','(NON-PHYSICAL -> near-synchronous, not a real wave)'));
 
-        % SLOPE TEST over this band (see header): 0 = wave, 1 = fixed offset.
-        L = slope_loglog(freq(ix), v_f(ix), k_corr(ix), MIN_SLOPE_BINS, SLOPE_TOL);
-        if isnan(L.slope_v)
-            fprintf('        slope test: only %d usable bin(s) — need %d, skipped\n', ...
-                L.nbins, MIN_SLOPE_BINS);
-        else
-            fprintf(['        slope test: v %.1f->%.1f cm/s, k %.3f->%.3f rad/mm | ' ...
-                     'slope_v=%+.2f (SE %.2f, R^2=%.2f), slope_k=%+.2f | %s\n'], ...
-                L.v_lo, L.v_hi, L.k_lo, L.k_hi, L.slope_v, L.slope_v_se, L.r2, ...
-                L.slope_k, L.verdict);
-        end
+        % MARGIN OVER THE BIAS FLOOR. GMAG is a vector mean over ~56 finite-
+        % difference sites, so random scatter does NOT cancel completely —
+        % GMAG_null is what a SHUFFLED map of the same phases still scores.
+        % A ratio near 1 means the measured tilt (and every speed derived
+        % from it) is mostly finite-array artifact. Read v_med with this.
+        fratio = mean(GMAG(ix),'omitnan') / max(mean(GMAG_null(ix),'omitnan'),eps);
+
+        fprintf(['    %.1f–%.1f Hz | mean PGD=%.2f | dir=%3.0f° | grad=%.3f rad/mm ' ...
+                 '(%.0f° across array) | %.0f%% pos organised | speed %.0f–%.0f cm/s %s\n'], ...
+            freq(ix(1)), freq(ix(end)), mean(PGD(ix)), dmean, kmean, dphi, ...
+            100*mean(fracpos(ix),'omitnan'), min(vlo,vhi), max(vlo,vhi), ...
+            ternary(ok,'(plausible)','(NON-PHYSICAL -> near-synchronous, not a real wave)'));
+        fprintf('        gradient vs shuffle floor: GMAG/GMAG_null = %.2f%s\n', fratio, ...
+            ternary(fratio<1.5, '  <- AT THE FLOOR: tilt and speed not interpretable', ''));
 
         A(ia).bands(end+1) = struct('f_lo',freq(ix(1)),'f_hi',freq(ix(end)), ...
             'PGD',mean(PGD(ix)),'dir',dmean,'grad_radmm',kmean,'dphi_array_deg',dphi, ...
-            'v_med',vmed,'speed_ok',ok,'fracpos',mean(fracpos(ix),'omitnan'), ...
-            'slope_v',L.slope_v,'slope_k',L.slope_k,'slope_v_se',L.slope_v_se, ...
-            'r2',L.r2,'nbins',L.nbins,'v_lo',L.v_lo,'v_hi',L.v_hi, ...
-            'k_lo',L.k_lo,'k_hi',L.k_hi,'verdict',L.verdict); %#ok<AGROW>
+            'v_lo',vlo,'v_hi',vhi,'v_med',vmed,'speed_ok',ok, ...
+            'fracpos',mean(fracpos(ix),'omitnan'),'floor_ratio',fratio); %#ok<AGROW>
     end
 
     %% ── PER-POSITION mode (keeps the collapsed result above) ──────────
@@ -362,13 +340,12 @@ if ~isempty(rep_cons)
     fprintf('CONSENSUS wave replicated in ALL animals: %s\n', band_str(freqC, rep_cons));
 end
 
-% Slope-test summary across animals. A significant PGD band is only
-% evidence of PROPAGATION if slope_v ~ 0; a band with slope_v ~ +1 is a
-% frozen phase offset that PGD alone cannot rule out. Read this table
-% before quoting any speed from the band report above.
-fprintf('\n--- SLOPE TEST (0 = constant speed = wave; +1 = constant wavenumber = fixed offset) ---\n');
-fprintf('%-10s %-14s %-18s %8s %8s   %s\n','animal','band','v across band','slope_v','slope_k','verdict');
-n_wave = 0; n_fitted = 0;
+% Band summary across animals. These bands say the phase map is a PLANE.
+% Whether that plane PROPAGATES is not answerable here — see the header
+% and cortical_planar_wave_derotation.m. Speeds below are descriptive and
+% only meaningful where GMAG/GMAG_null is comfortably above 1.
+fprintf('\n--- SIGNIFICANT PGD BANDS (planar, propagation NOT tested here) ---\n');
+fprintf('%-10s %-14s %-20s %10s %10s\n','animal','band','v across band','tilt (deg)','GMAG/null');
 for k = 1:numel(valid)
     ia = valid(k);
     if ~isfield(A,'bands') || isempty(A(ia).bands)
@@ -376,22 +353,14 @@ for k = 1:numel(valid)
     end
     for r = 1:numel(A(ia).bands)
         B = A(ia).bands(r);
-        if isnan(B.slope_v)
-            fprintf('%-10s %5.1f–%-7.1f %-18s %8s %8s   too few bins (%d)\n', ...
-                A(ia).animal, B.f_lo, B.f_hi, '-', '-', '-', B.nbins);
-            continue;
-        end
-        n_fitted = n_fitted + 1;
-        n_wave = n_wave + (abs(B.slope_v) <= SLOPE_TOL);
-        fprintf('%-10s %5.1f–%-7.1f %6.1f -> %-8.1f %+8.2f %+8.2f   %s\n', ...
-            A(ia).animal, B.f_lo, B.f_hi, B.v_lo, B.v_hi, B.slope_v, B.slope_k, B.verdict);
+        fprintf('%-10s %5.1f–%-7.1f %7.0f -> %-10.0f %10.0f %10.2f%s\n', ...
+            A(ia).animal, B.f_lo, B.f_hi, B.v_lo, B.v_hi, B.dphi_array_deg, ...
+            B.floor_ratio, ternary(B.floor_ratio<1.5,'  <- at the floor',''));
     end
 end
-if n_fitted > 0
-    fprintf(['\n=> %d of %d fitted band(s) hold a constant speed. A wave claim needs this ' ...
-             'in BOTH animals\n   over an overlapping band; a single-animal flat band is a ' ...
-             'lead, not a result.\n'], n_wave, n_fitted);
-end
+fprintf(['\n=> For propagation vs frozen offset, run cortical_planar_wave_derotation.m:\n' ...
+         '   its best-fit speed ridge is fitted to all electrodes at once, so it does not\n' ...
+         '   inherit the finite-difference bias floor that contaminates v above.\n']);
 
 %% ─── Plots ───────────────────────────────────────────────────────────
 cols = lines(numel(animals));
@@ -436,60 +405,21 @@ for k=1:numel(valid)
     ia=valid(k); subplot(numel(valid),1,k); hold on;
     fr=A(ia).freq;
     shade_bands(fr, A(ia).sig, [0.2 0.5 0.9]);
-    plot(fr, A(ia).dphi_array, '-', 'Color',cols(ia,:),'LineWidth',1.8);
+    plot(fr, A(ia).dphi_array, '-', 'Color',cols(ia,:),'LineWidth',1.8, ...
+        'DisplayName','measured tilt');
+    % The shuffle floor in the SAME units. The vector mean over ~56 sites
+    % does not fully cancel, so this is what a structureless map scores.
+    % Where the two curves meet, the measured tilt is uninterpretable.
+    plot(fr, rad2deg(A(ia).GMAG_null*(grid_cols-1)), '--', 'Color',[.45 .45 .45], ...
+        'LineWidth',1.2, 'DisplayName','shuffle floor');
     hl=yline(360,'k:','one full cycle'); set(hl,'YLimInclude','off'); % reference, don't rescale
     ylabel('\Delta\phi across array (deg)');
     title(sprintf('%s — phase tilt magnitude (shaded = planar-wave band)',A(ia).animal));
     if k==numel(valid), xlabel('Frequency (Hz)'); end
-    grid on;
-end
-sgtitle('Gradient magnitude: de-biased phase change across the array');
-saveas(f3, fullfile(out_dir,'gradient_magnitude_per_animal.pdf'));
-
-% Fig 3b: SLOPE TEST — log(v) vs log(f) over each significant band.
-% This is the figure that separates a traveling wave from a frozen phase
-% offset (see header). A band lying FLAT holds one speed across frequency
-% = a wave. A band running PARALLEL to the +1 guide has constant
-% wavenumber = a fixed offset that PGD cannot distinguish at any single
-% frequency. Grey = all frequencies (context); coloured = significant band.
-f3b = figure('Position',[80 80 860 330*numel(valid)]);
-for k=1:numel(valid)
-    ia=valid(k); subplot(numel(valid),1,k); hold on;
-    fr=A(ia).freq; vv=A(ia).v_f;
-    good = isfinite(fr) & isfinite(vv) & fr>0 & vv>0;
-    plot(fr(good), vv(good), '.', 'Color',[.75 .75 .75], ...
-        'MarkerSize',8, 'DisplayName','all frequencies');
-    runs_k = find_runs(A(ia).sig);
-    for r = 1:numel(runs_k)
-        ix = runs_k{r}; B = A(ia).bands(r);
-        gi = ix(isfinite(fr(ix)) & isfinite(vv(ix)) & fr(ix)>0 & vv(ix)>0);
-        if isempty(gi), continue; end
-        plot(fr(gi), vv(gi), 'o-', 'Color',cols(ia,:), 'MarkerFaceColor',cols(ia,:), ...
-            'MarkerSize',4, 'LineWidth',1.4, 'DisplayName',sprintf('%.1f–%.1f Hz',B.f_lo,B.f_hi));
-        if ~isnan(B.slope_v)
-            % fitted slope, and the two reference slopes anchored at the
-            % band's geometric-mean point so all three are comparable.
-            fa = fr(gi); f0 = exp(mean(log(fa))); v0 = exp(mean(log(vv(gi))));
-            ff = linspace(min(fa), max(fa), 20);
-            plot(ff, v0*(ff/f0).^B.slope_v, '-',  'Color',cols(ia,:), ...
-                'LineWidth',2.4, 'HandleVisibility','off');
-            plot(ff, v0*(ff/f0).^0, ':',  'Color',[.2 .2 .2], 'HandleVisibility','off');
-            plot(ff, v0*(ff/f0).^1, '--', 'Color',[.2 .2 .2], 'HandleVisibility','off');
-            text(max(fa), v0*(max(fa)/f0)^B.slope_v, ...
-                sprintf('  slope %+.2f\n  %s', B.slope_v, B.verdict), ...
-                'FontSize',7, 'Color',cols(ia,:), 'VerticalAlignment','middle');
-        end
-    end
-    set(gca,'XScale','log','YScale','log');
-    yline(SPEED_OK(1),'k:','HandleVisibility','off');
-    yline(SPEED_OK(2),'k:','HandleVisibility','off');
-    xlabel('Frequency (Hz)'); ylabel('implied speed v = 2\pif/k (cm/s)');
-    title(sprintf(['%s — slope test  (dotted guide = slope 0 = CONSTANT SPEED = wave;  ' ...
-                   'dashed = slope +1 = CONSTANT WAVENUMBER = fixed offset)'], A(ia).animal));
     legend('Location','northwest','FontSize',7); grid on;
 end
-sgtitle('Slope test: does a significant PGD band propagate, or is it a frozen phase offset?');
-saveas(f3b, fullfile(out_dir,'slope_test_per_animal.pdf'));
+sgtitle('Gradient magnitude: phase change across the array, against its shuffle floor');
+saveas(f3, fullfile(out_dir,'gradient_magnitude_per_animal.pdf'));
 
 %% ── Per-position figures ─────────────────────────────────────────────
 if DO_PER_POSITION && isfield(A,'sigp')
@@ -605,8 +535,7 @@ Asave = A;   % drop the big raw phase arrays (already in phase_progression.mat)
 if isfield(Asave,'rawphi'), Asave = rmfield(Asave,{'rawphi','rawcoh'}); end
 results = struct('A',Asave,'rep',rep,'sigG',sigG,'freq',freqC,'animals',{animals}, ...
     'rep_cons',rep_cons,'CONSENSUS',CONSENSUS,'CONSENSUS_MIN_POS',CONSENSUS_MIN_POS, ...
-    'dv',dv,'SPACING_MM',SPACING_MM,'SPEED_OK',SPEED_OK, ...
-    'MIN_SLOPE_BINS',MIN_SLOPE_BINS,'SLOPE_TOL',SLOPE_TOL);
+    'dv',dv,'SPACING_MM',SPACING_MM,'SPEED_OK',SPEED_OK);
 save(fullfile(res_dir,'planar_wave_existence.mat'),'results','-v7.3');
 fprintf('\nSaved figures + results under %s\n', out_dir);
 
@@ -706,55 +635,6 @@ function runs = find_runs(mask)
 mask=mask(:)'; runs={}; d=diff([0 double(mask) 0]);
 s=find(d==1); e=find(d==-1)-1;
 for i=1:numel(s), runs{end+1}=(s(i):e(i))'; end %#ok<AGROW>
-end
-
-function L = slope_loglog(f, v, kk, min_bins, tol)
-% SLOPE TEST (see header): regress log(v) on log(f) across one band.
-%
-%   slope_v ~ 0  ->  speed constant across frequency      -> REAL WAVE
-%   slope_v ~ 1  ->  wavenumber constant across frequency -> FIXED OFFSET
-%
-% slope_k is fitted independently only as an arithmetic check: because
-% v = 2*pi*f/k, the two must satisfy slope_v + slope_k = 1 to within
-% rounding. If they do not, something upstream is inconsistent.
-%
-% The SE is the ordinary least-squares slope SE. It is OPTIMISTIC here —
-% neighbouring frequency bins are smoothed and therefore correlated — so
-% it ranks bands, it does not give a p-value.
-f=f(:); v=v(:); kk=kk(:);
-L = struct('slope_v',NaN,'slope_k',NaN,'slope_v_se',NaN,'r2',NaN,'nbins',0, ...
-           'v_lo',NaN,'v_hi',NaN,'k_lo',NaN,'k_hi',NaN,'verdict','(not fitted)');
-ok = isfinite(f) & isfinite(v) & isfinite(kk) & f>0 & v>0 & kk>0;
-L.nbins = sum(ok);
-if L.nbins < min_bins, return; end
-f=f(ok); v=v(ok); kk=kk(ok);
-L.v_lo=v(1); L.v_hi=v(end); L.k_lo=kk(1); L.k_hi=kk(end);
-
-lf=log(f); lv=log(v); lk=log(kk);
-pv=polyfit(lf,lv,1); L.slope_v=pv(1);
-pk=polyfit(lf,lk,1); L.slope_k=pk(1);
-
-res = lv - polyval(pv,lf);
-sst = sum((lv-mean(lv)).^2);
-L.r2 = 1 - sum(res.^2)/max(sst,eps);
-n = numel(lf);
-L.slope_v_se = sqrt( (sum(res.^2)/(n-2)) / max(sum((lf-mean(lf)).^2),eps) );
-
-% Classify. Note the two windows do not tile the line: a slope can also
-% fall OUTSIDE both (e.g. +1.4, where k actually decreases with frequency).
-% That is not "ambiguous" — it is further from propagation than the fixed
-% offset is, so it gets its own label rather than being lumped in the middle.
-if abs(L.slope_v) <= tol
-    L.verdict = 'CONSTANT SPEED -> wave-like';
-elseif abs(L.slope_v - 1) <= tol
-    L.verdict = 'constant wavenumber -> fixed phase offset, NOT propagation';
-elseif L.slope_v > 1 + tol
-    L.verdict = 'steeper than constant-k (k FALLS with f) -> not propagation';
-elseif L.slope_v < -tol
-    L.verdict = 'v falls with f (k rises faster than f) -> not propagation';
-else
-    L.verdict = 'ambiguous (between constant-speed and constant-k)';
-end
 end
 
 function shade_bands(freq, sig, col)

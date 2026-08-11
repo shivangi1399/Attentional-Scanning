@@ -4,6 +4,8 @@
 
 Two animals (`hermes`, `klecks`), 64-channel 8×8 V4 arrays, `cp10_till_100`, `dv = 'lfp'` unless stated. Animals are **never pooled at the channel level**; they are combined by replication and by a pooled standardised test.
 
+> **The two animals do not have the same number of stimulus locations** — hermes has **16**, klecks **9** (`positions` in `phase_progression.mat`). Wherever this file says "16 locations" it is quoting hermes; substitute 9 for klecks. Nothing in the code hard-codes 16, but every per-location noise floor is `~1/√nPos`, so klecks' floors are correspondingly higher.
+
 ---
 
 ## Flow
@@ -32,7 +34,9 @@ Two animals (`hermes`, `klecks`), 64-channel 8×8 V4 arrays, `cp10_till_100`, `d
 
 `phase_progression.m` is the only script that touches raw trials in the main path. Everything else consumes `phase_progression.mat` — except the `coherence` estimator, which goes back to the trials via the cached per-location sums, and `erp_latency_wave.m`, which needs the time-domain signal.
 
-Also read (not produced here): `phase_coherence/complex/.../coherence.mat` + `coh_perm_complex.mat`, used to build the per-channel coherence-significance mask that gates which channels enter each analysis.
+Also read (not produced here): `phase_coherence/complex/cp10_till_100/<dv>/all_loc_difflev/<ch>/coherence.mat` + `coh_perm_complex.mat`, used to build the per-channel coherence-significance mask (`load_coh_sig_mask`).
+
+That mask gates **§2, §4 and §5 only** (`CH_FILTER = 'significant'` in each). §3 uses its own reliability quantile instead (`RELIABLE_Q = 0.5`, drop the bottom half of `coh_mag` per frequency), and §1 and §6 apply no such gate at all — so the channel sets are not identical across the six scripts.
 
 ---
 
@@ -88,21 +92,20 @@ Two properties decide how it must be read:
 
 The direction of the tilt comes from the same complex number: with `g = gx + i·gy` (real = column, imag = row), `PGD = |mean(g)|/mean(|g|)` and `dir = angle(mean(g))` are its **modulus and argument**.
 
-### The slope test — what turns PGD into a wave claim
+### The bias floor — why PGD's speeds cannot carry a wave claim
 
-Regress `log(v)` on `log(f)` across each significant band:
+`GMAG = |mean(grad φ)|` is a vector mean over only ~56 finite-difference sites, so random scatter does **not** cancel completely. `GMAG_null` — the same statistic on a *shuffled* map of the same phases — measures what survives from nothing, and it is not small:
 
 ```
-   slope_v =  0   ->  v constant   ->  REAL TRAVELING WAVE
-   slope_v = +1   ->  k constant   ->  FIXED PHASE OFFSET, no propagation
-
-   slope_v + slope_k = 1 identically, since v = 2*pi*f/k
-                       -> slope_k is printed only as an arithmetic check
+   GMAG / GMAG_null   ~1.0  ->  the measured tilt IS the finite-array artifact
+                      ~1.2  ->  five-sixths of it could be artifact
 ```
 
-Lives in `cortical_planar_wave_PGD.m` (helper `slope_loglog`), inside the per-band loop it already runs, so it costs nothing extra. `SLOPE_TOL = 0.33` sets how close to 0 or 1 counts; `MIN_SLOPE_BINS = 4` refuses to fit through fewer bins rather than guessing. Slopes outside *both* windows (e.g. `+1.4`, where `k` falls with `f`) get their own label — they are further from propagation than a fixed offset is, not "in between".
+Over the significant bands the observed ratios run **0.89–1.67 (hermes)** and **1.53–2.91 (klecks)**, so `k = GMAG/spacing` is inflated, and since `v = 2πf/k`, every speed from this script is correspondingly deflated. The floor also varies with frequency, so the bias is not even a constant offset — it changes across the spectrum.
 
-> ⚠️ The printed slope SE is ordinary least-squares and therefore **optimistic**: neighbouring frequency bins are smoothed and so correlated. Use it to rank bands, not as a p-value.
+The band report therefore prints `GMAG/GMAG_null` next to every band, and `gradient_magnitude_per_animal.pdf` draws the floor as a dashed line under the measured tilt. **Where the curves meet, the tilt and the speed are not interpretable.**
+
+Treat every speed from this script as descriptive. Whether the ramp *scales with frequency* — the question that separates a wave from a frozen offset — is answered by de-rotation (§4), which fits the wave model to all electrodes at once and so never forms this local derivative.
 
 ### `R`, `R0` and the gain (de-rotation)
 
@@ -139,7 +142,7 @@ Lives in `cortical_planar_wave_PGD.m` (helper `slope_loglog`), inside the per-ba
      = REAL TRAVELLING WAVE         = constant wavenumber, NOT a wave
 ```
 
-This is the same discriminator as the slope test, drawn instead of fitted. Support for a wave = horizontal band, at a plausible speed, **replicated in both animals**.
+This is **the** discriminator between propagation and a frozen offset, and this script is where it is decided. Support for a wave = horizontal band, at a plausible speed, **replicated in both animals**.
 
 ### Statistics vocabulary
 
@@ -171,15 +174,17 @@ Also produces `pref_phase` and `coh_mag`, which every other script runs on.
 | `PER-POSITION` | wave fitted separately per stimulus position, plus the wave-**origin** check against RF-driven channels (test #3) and cross-position direction agreement |
 | `CONSENSUS` | collapsed-sig **AND** cross-position direction agreement (Rayleigh) **AND** sig in ≥ N positions |
 
-Each significant band then goes through the **slope test** (`slope_test_per_animal.pdf`). **Read that before quoting any speed from this script.**
+Each significant band prints its `GMAG/GMAG_null` margin. **This script does not test propagation** — it says the phase map is a plane, not that the plane moves. For that, see §4.
 
-Outputs: `pgd_existence_per_animal.pdf`, `pgd_existence_combined.pdf`, `gradient_magnitude_per_animal.pdf`, `slope_test_per_animal.pdf`, `per_position_existence.pdf`, `wave_origin_<animal>.pdf`, `coverage_per_position.pdf`, `consensus_wave.pdf`.
+> **The origin check has no null.** `origin_align(f,p)` is the angle between the fitted propagation axis and the driven-patch→array-centre axis, folded to 0–90°, and the script prints its mean — there is no permutation distribution and no p-value, so it cannot currently return a verdict either way. 45° is what a random axis gives; treat departures from it as descriptive until a null is added.
+
+Outputs: `pgd_existence_per_animal.pdf`, `pgd_existence_combined.pdf`, `gradient_magnitude_per_animal.pdf`, `per_position_existence.pdf`, `wave_origin_<animal>.pdf`, `coverage_per_position.pdf`, `consensus_wave.pdf`.
 
 ### 3. `cortical_wave_type_classification.m` — what kind of pattern is it?
 
 **Question.** Phase can be spatially organised in several ways. Which one is this?
 
-**Method.** On the same collapsed map, test four patterns against their own nulls:
+**Method.** On the collapsed map, test four patterns against their own nulls:
 
 | pattern | statistic |
 |---|---|
@@ -189,6 +194,10 @@ Outputs: `pgd_existence_per_animal.pdf`, `pgd_existence_combined.pdf`, `gradient
 | synchronous/none | mean \|grad\| not above null |
 
 Works on **wrapped** phase with local neighbour differences and deliberately does *not* 2-D unwrap — unwrapping would destroy the very singularities a spiral is defined by.
+
+> **Its channel filter is not §2's.** This script has no `CH_FILTER`; it drops the bottom `RELIABLE_Q = 0.5` quantile of `coh_mag` per frequency. So its map is built from a different channel set than the PGD map it is compared against — close, but not the same electrodes.
+
+Outputs: `wave_type_vs_freq.pdf`, `wave_type_strip.pdf`, `phase_maps_focus.pdf`. **No `.mat` is saved** — this is the one script whose results exist only as figures.
 
 ### 4. `cortical_planar_wave_derotation.m` — is the cortical wave dispersion-free?
 
@@ -204,7 +213,7 @@ Outputs: `derotation_R_grids.pdf` (2 rows = the two estimators), plus `derotatio
 
 **Question.** The actual scanning hypothesis: as the stimulus moves, does the preferred phase ramp with distance?
 
-**Method.** Same rotate-to-overlap, but the distance axis is **stimulus eccentricity in degrees**, so speed is in deg/s. Three modes (full detail in [the appendix](#appendix--the-three-modes-of-stimulus_loc_traveling_wavem)):
+**Method.** Same rotate-to-overlap, but the distance axis is **stimulus eccentricity in degrees**, so speed is in deg/s (30 speeds, 1–200 deg/s; no direction sweep — the axis is already 1-D). Three modes (full detail in [the appendix](#appendix--the-three-modes-of-stimulus_loc_traveling_wavem)):
 
 | mode | de-rotates by | says |
 |---|---|---|
@@ -324,7 +333,7 @@ What the `phase` estimator does with them:
                             Σ_p  coh_mag
 ```
 
-The level-1 coherence enters only as a **weight**; what is summed is the *preferred phases*. So R asks "do the 16 per-location preferred phases line up after de-rotation?"
+The level-1 coherence enters only as a **weight**; what is summed is the *preferred phases*. So R asks "do the `nPos` per-location preferred phases (16 hermes, 9 klecks) line up after de-rotation?"
 
 ```
    trials ──(level 1: coherence)──► one complex number per (ch, freq, position)
@@ -369,7 +378,7 @@ The raw phase column (10°, 170°, 90°, 250°) is scattered → low coherence. 
                                                                        S(p,f)
 ```
 
-`S(p,f)` is cached once, then every `(f,v)` cell is a cheap re-weighting of ~16 numbers. It is never divided by anything or read on its own — per-location coherences are never computed, and never compared with each other.
+`S(p,f)` is cached once, then every `(f,v)` cell is a cheap re-weighting of `nPos` numbers (16 hermes, 9 klecks). It is never divided by anything or read on its own — per-location coherences are never computed, and never compared with each other.
 
 **Three ways to misread this:**
 
@@ -392,7 +401,7 @@ A **lower `R0` under `coherence` is good news**, not a weaker result — it mean
 
 ### Why `coherence` is the better-behaved estimator
 
-**1. No binning loss.** `phase` estimates 16 separate coherences from ~1/16 of the trials each, then fits to those noisy intermediates. `coherence` fits the unbinned data directly.
+**1. No binning loss.** `phase` estimates `nPos` separate coherences from ~1/`nPos` of the trials each (1/16 hermes, 1/9 klecks), then fits to those noisy intermediates. `coherence` fits the unbinned data directly.
 
 **2. It fixes a weighting flaw.** `phase` weights location *p* by `|c_p|` — but under noise `|c_p| ~ 1/√n_p`, so a location with **fewer** trials gets a **larger** weight. Backwards. The two estimators differ by exactly this:
 
@@ -430,8 +439,10 @@ The de-rotation depends on a trial only through its location, so the estimator c
 ```
    cache: results_<animal>/scanning/trial_position_sums/cp10_till_100/<dv>/<ch>/
 
-   stimulus_loc_traveling_wave.m   needs S_obs AND S_perm   (~286 MB/animal)
+   stimulus_loc_traveling_wave.m   needs S_obs AND S_perm
                                    — its null shuffles trial->location labels
+                                   on disk: 248 MB hermes, 142 MB klecks
+                                   (the size scales with nPos: 16 vs 9)
    cortical_planar_wave_derotation.m  needs S_obs only      (~0.3 MB/animal)
                                    — its null shuffles electrode->array coordinate
 ```
@@ -486,6 +497,8 @@ The pooled null pairs permutation *b* of one animal with permutation *b* of the 
   results_combined/scanning/<analysis>/cp10_till_100/<dv>/          *.mat
   Plots/scanning/<analysis>/cp10_till_100/<dv>/                     *.pdf
 ```
+
+`<analysis>` is `phase_progression`, `planar_wave_existence` (§2), `wave_type` (§3), `planar_wave_derotation` (§4), `stimulus_loc_wave` (§5), `erp_latency` (§6). §3 writes PDFs only — there is no `wave_type` folder under `results_combined`.
 
 Both estimators run together. The R grids figure holds both; the gain (and, in the cortical script, direction/speed) figures carry `_phase` / `_coherence`, and `[_validRF]` marks the RF filter, so all combinations coexist rather than overwriting.
 
@@ -613,7 +626,7 @@ The rule that decides which one a mode needs:
 | Affected by `RF_VALID_ONLY` | no | yes | yes |
 | Hypothesis | phase depends on stimulus position | one wave sweeping out from the fovea, stimulus-independent | the wave starts where the stimulus lands |
 | Blind to | any per-electrode delay | — | the flat part of the retinotopic offset |
-| Noise floor of R | ~0.22 (16 locations) | ~0.03 (all c×p terms) | ~0.22 |
+| Noise floor of R | ~1/√nPos: ~0.25 hermes (16 loc), ~0.33 klecks (9 loc) | ~0.03 (all c×p terms) | same as `visual` |
 | Interpreting a null | meaningful | **ambiguous** (offsets only lower R) | meaningful |
 | Interpreting a hit | limited in meaning | trustworthy | trustworthy |
 
@@ -699,5 +712,6 @@ Electrodes are assumed to share a clock, so their relative phase is meaningful a
 | `a(c,p)` table | main loop: `a_arr = hypot(rf_deg(:,1) - stim_deg(:,1).', rf_deg(:,2) - stim_deg(:,2).')` |
 | RF centres → degrees | `functions/elec_rf_deg.m` (subtracts the screen centre 840/525 before `/ppd`) |
 | Valid-only toggle | `RF_VALID_ONLY` |
-| Slope test | `cortical_planar_wave_PGD.m` → `slope_loglog`, `MIN_SLOPE_BINS`, `SLOPE_TOL` |
+| Gradient bias floor | `cortical_planar_wave_PGD.m` → `GMAG_null` (shuffle null), printed as `GMAG/GMAG_null` per band |
+| Frequency-scaling test | `cortical_planar_wave_derotation.m` → `vbest` ridge (§4); **not** in the PGD script |
 | NaN-safe permutation guard | `null_guard`, called by all six `*_grid*` helpers |

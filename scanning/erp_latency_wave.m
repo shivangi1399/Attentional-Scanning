@@ -38,14 +38,11 @@
 %                           -> tests the SCANNING/retinotopic question (§5)
 % Both are run by default.
 %
-% THE LEAD THIS IS AIMED AT
+% WHY THIS TEST EXISTS
 % -------------------------
-% The slope test on planar_wave_existence.mat (see README) found ONE band that
-% behaves like a real wave: hermes 13.3-25.5 Hz, v ~ 28 cm/s, slope of
-% log(v) vs log(f) = -0.10, k rising in proportion. It does not replicate in
-% klecks and de-rotation did not confirm it. If that band is real, THIS test
-% should return a cortical latency slope near 1/(28 cm/s) = 3.6 ms/mm along the
-% same direction. If it returns ~0 ms/mm, the beta band is a fixed offset too.
+% It is the only measurement in the folder that reads TIME directly rather
+% than phase. Every other test reads the same pref_phase matrix, so they can
+% only corroborate each other. This one can disagree with all of them.
 %
 % CAVEAT
 % -----------------------

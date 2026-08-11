@@ -1,8 +1,7 @@
 function out = phase_progression_chan(cfg_fun)
-% Per-channel phase-progression worker for SLURM parallelisation.
-% Mirrors the per-channel block of phase_progression_per_chan.m so that
-% the systematicity stats can be computed for one channel × DV at a time
-% on a single SLURM job.
+% Per-channel phase-progression worker for SLURM parallelisation, so the
+% systematicity stats can be computed for one channel × DV at a time on a
+% single SLURM job. Submitted by phase_progression.m.
 %
 % cfg_fun fields:
 %   ichan   — channel index
@@ -115,8 +114,7 @@ out = 1;
 end
 
 % =====================================================================
-% Local helpers — duplicated from phase_progression_per_chan.m so the
-% SLURM worker is self-contained.
+% Local helpers — kept in-file so the SLURM worker is self-contained.
 % =====================================================================
 function [Y, trlInfo, keepIdx, isPerCh] = local_get_dv_data(ph_comb, dv)
 switch dv
