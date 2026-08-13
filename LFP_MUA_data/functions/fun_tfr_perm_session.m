@@ -40,20 +40,23 @@ hitIdx  = find(data.trialinfo(:,20) == 1);
 missIdx = find(data.trialinfo(:,20) == 5);
 
 if length(hitIdx) < cfg.min_trials || length(missIdx) < cfg.min_trials
-    warning('%s: %d hits, %d misses - skipped', cfg.inputfile, ...
-        length(hitIdx), length(missIdx))
+    skipped = true; %#ok<NASGU>
+    reason  = sprintf('only %d hits / %d misses', length(hitIdx), length(missIdx));
+    warning('%s: %s - skipped', cfg.inputfile, reason)
+    save(cfg.outputfile, 'skipped', 'reason')
     return
 end
 
-% the sliding window has to fit inside the epoch, otherwise mtmconvol
-% returns NaN and those NaNs spread through the permutation arithmetic
+% Where the sliding window runs off the epoch mtmconvol returns NaN. Those
+% bins are simply unusable and are dropped from the statistics later; a NaN
+% affects its own time-frequency bin only, not the rest of the map.
 t_start = max(cellfun(@(t) t(1),   data.time));
 t_end   = min(cellfun(@(t) t(end), data.time));
 maxwin  = max(cfg.ncycles ./ cfg.foi);
 if cfg.toi(1) - maxwin/2 < t_start || cfg.toi(end) + maxwin/2 > t_end
-    warning('%s: epoch %g to %g s too short for toi %g to %g s with a %g s window - skipped', ...
-        cfg.inputfile, t_start, t_end, cfg.toi(1), cfg.toi(end), maxwin)
-    return
+    warning(['%s: epoch is %g to %g s, so with a %g s window the usable toi is ' ...
+        '%g to %g s. Bins outside that will be NaN.'], cfg.inputfile, ...
+        t_start, t_end, maxwin, t_start + maxwin/2, t_end - maxwin/2)
 end
 
 %% single-trial TFR
@@ -92,8 +95,27 @@ nT  = length(time);
 
 P = reshape(pow, nTr, []);                % trials x voxels
 clear pow
-if any(isnan(P(:)))
-    warning('%s: NaNs in the TFR, the difference maps will contain NaNs', cfg.inputfile)
+
+% A voxel that is NaN in any trial is NaN in every output map. That is what we
+% want - it is dropped from the test rather than contaminating other bins.
+% nan_frac_edge are the bins where the sliding window runs off the epoch, so no
+% trial has data. Anything beyond that comes from NaNs in individual trials.
+nan_frac      = mean(any(isnan(P),1));
+nan_frac_edge = mean(all(isnan(P),1));
+if nan_frac > 0
+    warning('%s: %.1f%% of bins NaN (%.1f%% from window edges)', ...
+        cfg.inputfile, 100*nan_frac, 100*nan_frac_edge)
+end
+if nan_frac > nan_frac_edge
+    warning(['%s: %.1f%% of bins are lost to NaNs in individual trials rather ' ...
+        'than window edges - check the epochs for artefacts'], ...
+        cfg.inputfile, 100*(nan_frac - nan_frac_edge))
+end
+if nan_frac == 1
+    skipped = true; %#ok<NASGU>
+    reason  = 'every time-frequency bin is NaN, check foi/toi against the epoch';
+    save(cfg.outputfile, 'skipped', 'reason')
+    return
 end
 
 %% real difference
@@ -118,9 +140,13 @@ clear P W
 
 %% save
 
-n_hit  = nH;
-n_miss = nM;
+n_hit   = nH;
+n_miss  = nM;
+skipped = false;
+reason  = '';
+settings = cfg;                 % the exact settings that produced this file
 save(cfg.outputfile, 'diff_real','diff_perm','label','freq','time', ...
-    'n_hit','n_miss','-v7.3')
+    'n_hit','n_miss','nan_frac','nan_frac_edge','skipped','reason', ...
+    'settings','-v7.3')
 
 end

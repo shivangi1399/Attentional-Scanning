@@ -323,8 +323,8 @@ end
 % 5) if plotting = 1, plot difference and percentiles and save plot per
 %    session
 
-for isess = length(session_names)
-    
+for isess = 1:length(session_names)
+
     cd(fullfile(output_paths{isess})),
     load('perm_cond_max.mat');
     load('perm_cond_min.mat');
