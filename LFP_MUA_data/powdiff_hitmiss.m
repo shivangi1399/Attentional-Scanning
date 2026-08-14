@@ -19,6 +19,9 @@ clc
 %   PERIODIC power     once the background is removed, is there a genuine
 %                      oscillatory difference, and at which frequencies?
 %
+% Trials are combined as a GEOMETRIC mean (log10 on single trials, then
+% average), matching fun_tfr_perm_session.m. See fun_powspec_session.m.
+%
 % Statistics:
 % -----------------
 % fooof has to be fit on averaged spectra, not single trials, so the SESSION
@@ -52,6 +55,8 @@ run_stats   = 1;               % 1 = group test across sessions
 plotting    = 1;
 
 min_trials  = 10;
+min_sess_frac= 0.8;            % test an element only if this fraction of the
+                               % pooled sessions contributes a value to it
 alpha_level = 0.05;            % two-sided corrected alpha
 nperm       = 5000;            % sign flips; 'all' is used when few sessions
 
@@ -187,23 +192,33 @@ for ianimal = 1:length(animals)
         fprintf('\n[%s] group test on %d sessions\n', animalName, nSess)
         if nSess < 3, warning('too few sessions'), continue, end
 
-        % ---- the four tests, per channel
-        [stat_flat, thr_flat] = signflip_test(FH - FM, nperm, alpha_level);
-        [stat_raw,  thr_raw ] = signflip_test(PH - PM, nperm, alpha_level);
-        [stat_off,  thr_off ] = signflip_test(OH - OM, nperm, alpha_level);
-        [stat_exp,  thr_exp ] = signflip_test(EH - EM, nperm, alpha_level);
+        % ---- drop elements built from too few sessions. An SD estimated from
+        % 2 sessions can collapse to ~0 and blow up t, and since the correction
+        % takes the max |t|, one such element sets the threshold for the whole
+        % family. Also removes all-NaN frequencies (the fooof edge at 80 Hz).
+        min_sess = max(3, ceil(min_sess_frac*nSess));
+        [dFlat, nFlat] = drop_sparse(FH - FM, min_sess);
+        [dRaw , nRaw ] = drop_sparse(PH - PM, min_sess);
+        [dOff , nOff ] = drop_sparse(OH - OM, min_sess);
+        [dExp , nExp ] = drop_sparse(EH - EM, min_sess);
+        fprintf('  elements needing >=%d of %d sessions; dropped: periodic %d, raw %d, offset %d, exponent %d\n', ...
+            min_sess, nSess, nFlat, nRaw, nOff, nExp)
 
-        % ---- the same tests on the channel average.
-        % The plotted curves are averaged over channels, so the shading in the
-        % figures has to come from a test on that same quantity - correcting
-        % over frequencies only, since there is no longer a channel dimension.
-        [stat_flat_avg, thr_flat_avg] = signflip_test(squeeze(nanmean(FH-FM,2)), nperm, alpha_level);
-        [stat_raw_avg,  thr_raw_avg ] = signflip_test(squeeze(nanmean(PH-PM,2)), nperm, alpha_level);
+        % ---- the four tests, per channel
+        [stat_flat, thr_flat] = signflip_test(dFlat, nperm, alpha_level);
+        [stat_raw,  thr_raw ] = signflip_test(dRaw,  nperm, alpha_level);
+        [stat_off,  thr_off ] = signflip_test(dOff,  nperm, alpha_level);
+        [stat_exp,  thr_exp ] = signflip_test(dExp,  nperm, alpha_level);
+
+        % ---- the same tests on the channel average, which is what the figures
+        % plot: corrected over frequencies only
+        [stat_flat_avg, thr_flat_avg] = signflip_test(squeeze(nanmean(dFlat,2)), nperm, alpha_level);
+        [stat_raw_avg,  thr_raw_avg ] = signflip_test(squeeze(nanmean(dRaw ,2)), nperm, alpha_level);
 
         % offset and exponent averaged over channels: one number per session,
-        % so this is a plain paired test with nothing to correct over
-        [stat_off_avg, thr_off_avg] = signflip_test(nanmean(OH-OM,2), nperm, alpha_level);
-        [stat_exp_avg, thr_exp_avg] = signflip_test(nanmean(EH-EM,2), nperm, alpha_level);
+        % so nothing to correct over
+        [stat_off_avg, thr_off_avg] = signflip_test(nanmean(dOff,2), nperm, alpha_level);
+        [stat_exp_avg, thr_exp_avg] = signflip_test(nanmean(dExp,2), nperm, alpha_level);
 
         outdir = fullfile(datafolder,'group_POW',run_name);
         if ~isdir(outdir), mkdir(outdir), end
@@ -241,21 +256,29 @@ for ianimal = 1:length(animals)
             % Blue shading marks frequencies where the hit-miss difference of
             % the plotted (channel-averaged) quantity is significant, in the
             % same style as the ERP figures in erpdiff_lfp_*.m
+            % (a) raw spectra. Sanity panel only - deliberately NOT shaded:
+            % the raw test is dominated by the aperiodic rotation shown in (d),
+            % so marking it here would report the same effect twice. The raw
+            % test is still computed and printed, as a check that the
+            % decomposition behaved.
             subplot(2,2,1), hold on
-            plot(freqs, squeeze(nanmean(nanmean(PH,2),1)), 'k', 'LineWidth',1.5)
-            plot(freqs, squeeze(nanmean(nanmean(PM,2),1)), 'r', 'LineWidth',1.5)
-            shade_sig(freqs, stat_raw_avg.mask)
+            hh = plot(freqs, squeeze(nanmean(nanmean(PH,2),1)), 'k', 'LineWidth',1.5);
+            hm = plot(freqs, squeeze(nanmean(nanmean(PM,2),1)), 'r', 'LineWidth',1.5);
             xlabel('Frequency (Hz)'), ylabel('log_{10} power')
-            legend({'hit','miss'},'Location','best'), title('raw spectra'), box on
+            legend([hh hm], {'hit','miss'}, 'Location','best')   % attach to the LINES,
+            title('(a) raw spectra')                             % not the shading patches
+            box on
 
+            % (b) periodic spectra
             subplot(2,2,2), hold on
-            plot(freqs, squeeze(nanmean(nanmean(FH,2),1)), 'k', 'LineWidth',1.5)
-            plot(freqs, squeeze(nanmean(nanmean(FM,2),1)), 'r', 'LineWidth',1.5)
+            hh = plot(freqs, squeeze(nanmean(nanmean(FH,2),1)), 'k', 'LineWidth',1.5);
+            hm = plot(freqs, squeeze(nanmean(nanmean(FM,2),1)), 'r', 'LineWidth',1.5);
             shade_sig(freqs, stat_flat_avg.mask)
             xlabel('Frequency (Hz)'), ylabel('log_{10} periodic power')
-            title('1/f removed (fooof)'), box on
+            legend([hh hm], {'hit','miss'}, 'Location','best')
+            title('(b) 1/f removed (fooof)'), box on
 
-            % difference with the corrected threshold
+            % (c) periodic difference, with the peak annotated
             subplot(2,2,3), hold on
             d  = squeeze(nanmean(nanmean(FH-FM,2),1));
             se = squeeze(nanstd(nanmean(FH-FM,2),0,1))./sqrt(nSess);
@@ -264,16 +287,66 @@ for ianimal = 1:length(animals)
             plot(freqs, d, 'k', 'LineWidth',1.5)
             yline(0,'k--')
             shade_sig(freqs, stat_flat_avg.mask)
-            xlabel('Frequency (Hz)'), ylabel('hit - miss (log_{10})')
-            title('periodic difference (blue = p<0.05 corrected)'), box on
 
-            % offset and exponent per channel
+            % label the largest significant deflection
+            tv = stat_flat_avg.t(:); msk = logical(stat_flat_avg.mask(:));
+            if any(msk)
+                cand = find(msk);
+                [~,k] = max(abs(d(cand))); ip = cand(k);
+                plot(freqs(ip), d(ip), 'ro', 'MarkerSize',7, 'LineWidth',1.2)
+                text(freqs(ip)+3, d(ip), sprintf(' %.1f Hz: %+.3f (%+.1f%%), t(%d) = %.2f', ...
+                    freqs(ip), d(ip), 100*(10^d(ip)-1), nSess-1, tv(ip)), 'FontSize',8)
+            end
+            xlabel('Frequency (Hz)'), ylabel('hit - miss (log_{10})')
+            title(sprintf('(c) periodic difference (blue: p<%g, corrected over %d freqs)', ...
+                alpha_level, length(freqs)))
+            box on
+
+            % (d) aperiodic parameters, one point per channel
             subplot(2,2,4), hold on
-            plot(stat_off.d, stat_exp.d, 'k.', 'MarkerSize',12)
+            x = stat_off.d(:); y = stat_exp.d(:);
+            ok = isfinite(x) & isfinite(y);
+            plot(x(ok), y(ok), 'k.', 'MarkerSize',12)
+
+            % regression line through the cloud; its slope gives the frequency
+            % the 1/f component pivots about, since d(offset) = d(exp)*log10(f0)
+            if sum(ok) > 2
+                b  = polyfit(x(ok), y(ok), 1);
+                rr = corrcoef(x(ok), y(ok)); r = rr(1,2);
+                xf = linspace(min(x(ok)), max(x(ok)), 10);
+                plot(xf, polyval(b,xf), 'b-', 'LineWidth',1)
+                % Frequency the two aperiodic lines cross at. They differ by
+                %   d_offset - d_exponent*log10(f),
+                % so the crossing is at 10^(d_offset/d_exponent), using the
+                % GROUP MEAN deltas. Not the slope of the scatter - that line
+                % has an intercept, so its slope is not the ratio of the means.
+                f0 = 10^( stat_off_avg.d / stat_exp_avg.d );
+                if isfinite(f0) && f0 > 1 && f0 < 500
+                    pivtxt = sprintf(', cross ~%.0f Hz', f0);
+                else
+                    pivtxt = '';
+                end
+            else
+                r = NaN; pivtxt = '';
+            end
+
+            % keep zero inside the axes so the reader can see which side the
+            % cloud sits on - otherwise the zero lines end up on the border
+            xl = [min(0,min(x(ok))) max(0,max(x(ok)))]; px = 0.12*diff(xl) + eps;
+            yl = [min(0,min(y(ok))) max(0,max(y(ok)))]; py = 0.12*diff(yl) + eps;
+            xlim(xl + [-px px]); ylim(yl + [-py py])
             xline(0,'k--'), yline(0,'k--')
+
+            text(0.03, 0.97, sprintf(['offset:   t(%d) = %.2f, p = %.3g (%d/%d ch)\n' ...
+                'exponent: t(%d) = %.2f, p = %.3g (%d/%d ch)\nr = %.2f%s'], ...
+                nSess-1, stat_off_avg.t, stat_off_avg.p, sum(stat_off.mask(:)), numel(stat_off.mask), ...
+                nSess-1, stat_exp_avg.t, stat_exp_avg.p, sum(stat_exp.mask(:)), numel(stat_exp.mask), ...
+                r, pivtxt), ...
+                'Units','normalized', 'VerticalAlignment','top', 'FontSize',8)
+
             xlabel('\Delta aperiodic offset (hit - miss)')
             ylabel('\Delta aperiodic exponent (hit - miss)')
-            title('aperiodic parameters, one dot per channel'), box on
+            title('(d) aperiodic parameters, one dot per channel'), box on
 
             sgtitle(sprintf('%s [%s]: pre-stimulus %g to %g s, %d sessions', ...
                 animalName, run_name, toilim(1), toilim(2), nSess), 'Interpreter','none')
@@ -310,13 +383,29 @@ end
 
 thr = quantile(maxdist, 1 - alpha_level);
 
+pv = arrayfun(@(v) mean(maxdist >= abs(v)), tobs);
+pv(~isfinite(tobs)) = NaN;      % dropped elements have no p value
+
 stat        = [];
 stat.t      = reshape(tobs, [sz(2:end) 1]);
 stat.d      = reshape(nanmean(Dm,1), [sz(2:end) 1]);
 stat.mask   = abs(stat.t) > thr;
-stat.p      = reshape(arrayfun(@(v) mean(maxdist >= abs(v)), tobs), [sz(2:end) 1]);
+stat.p      = reshape(pv, [sz(2:end) 1]);
 stat.n      = n;
 stat.maxdist= maxdist;
+end
+
+
+function [D, ndropped] = drop_sparse(D, min_sess)
+% NaN out any element that fewer than min_sess sessions contribute to.
+% D is nSess x ... ; the first dimension is sessions.
+
+sz  = size(D);
+Dm  = reshape(D, sz(1), []);
+bad = sum(~isnan(Dm), 1) < min_sess;
+ndropped = sum(bad);
+Dm(:, bad) = NaN;
+D = reshape(Dm, sz);
 end
 
 

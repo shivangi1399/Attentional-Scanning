@@ -41,7 +41,7 @@ session_paths = [];
 session_paths = cellfun(@(x) fullfile(outputfolder,x), session_names, 'uniform',0);
 
 session_paths_files = [];
-session_paths_files = cellfun(@(x) fullfile(outputfolder,x, 'clean_data.mat'), session_names, 'uniform',0);
+session_paths_files = cellfun(@(x) fullfile(outputfolder,x, 'clean_lfp.mat'), session_names, 'uniform',0);
 
 %% Using fooof to remove 1/f
 

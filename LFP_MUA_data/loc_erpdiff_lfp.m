@@ -1,4 +1,4 @@
-%% per-location ERP difference pipeline
+%% per-location ERP difference pipeline, both animals (klecks and hermes)
 clear all
 close all
 clc
@@ -13,12 +13,32 @@ addpath /opt/ESIsoftware/matlab/slurmfun/
 addpath /mnt/hpc/projects/MWSampling/4Shivangi/code/eye_data
 clc
 
+%% Animal configuration
+
+animals(1).name            = 'klecks';
+animals(1).resultsfolder   = '/mnt/hpc/projects/MWSampling/4Shivangi/results_klecks';
+animals(1).remove_sessions = [2, 15, 16, 18];
+animals(1).plotfolder      = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/Hitvsmiss/erpdiff_klecks/lfp/per_loc';
+
+animals(2).name            = 'hermes';
+animals(2).resultsfolder   = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes';
+animals(2).remove_sessions = [1, 3, 21];
+animals(2).plotfolder      = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/Hitvsmiss/erpdiff_hermes/lfp/per_loc';
+
+for ianimal = 1:length(animals)
+
+animalName      = animals(ianimal).name;
+datafolder      = animals(ianimal).resultsfolder;
+remove_sessions = animals(ianimal).remove_sessions;
+plotfolder      = animals(ianimal).plotfolder;
+fprintf('\n=============== %s ===============\n', animalName)
+
+% animals have different channel counts, so these must not carry over
+clear perm_cond_max perm_cond_min
+
 %% Data paths
 
-datafolder   = '/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes';
 cd(datafolder)
-
-animalName = 'hermes';
 temp = dir;
 session_names = {};
 ii = 0;
@@ -365,7 +385,7 @@ for isess = 1:length(session_names)
             end
             % save figure
             locid = trial_perm_ind.loc(iloc).locationID;
-            baseDir = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/Hitvsmiss/erpdiff_hermes/lfp/per_loc';
+            baseDir = plotfolder;
             saveDir = fullfile(baseDir, num2str(locid));
             
             if ~isfolder(saveDir)
@@ -386,13 +406,12 @@ end
 %% Pooling across sessions per location (channel-wise thresholds and ERPs)
 
 % Remove unwanted sessions if needed 
-remove_sessions = [1, 3, 21];
 keep_sessions = setdiff(1:length(session_names), remove_sessions);
 session_namesp = session_names(keep_sessions);
 output_pathsp = output_paths(keep_sessions);
 
 % load channel list used previously
-cd('/mnt/hpc/projects/MWSampling/4Shivangi/results_hermes/critical_time')
+cd(fullfile(datafolder,'critical_time'))
 if exist('all_channels.mat','file')
     load('all_channels')  % loads all_channels
 else
@@ -422,16 +441,14 @@ for iloc_all = 1:length(all_locs)
     fprintf('Pooling location %g across sessions\n', locid)
     
     % initialize storage
-    t_dist_max = nan(num_channels, num_permutations, num_sessions);
-    t_dist_min = nan(num_channels, num_permutations, num_sessions);
-    
+    valid_loc_paths = {};   % sessions that actually have this location
+
     ERPdiff_r = nan(num_sessions, num_channels, time_len);
     ERP_hit = nan(num_channels, time_len, num_sessions);
     ERP_miss = nan(num_channels, time_len, num_sessions);
     
     sess_counter = 0;
     for isess = 1:length(session_namesp)
-        sessidx = isess;
         outp = output_pathsp{isess};
         permfile = fullfile(outp, sprintf('perm_cond_loc%d.mat',locid));
         locERPdir = fullfile(outp,sprintf('loc%d',locid), 'ERP_real');
@@ -440,27 +457,15 @@ for iloc_all = 1:length(all_locs)
         end
         
         sess_counter = sess_counter + 1;
-        % load perm distributions if present
-        load(permfile,'perm_cond_max','perm_cond_min')  % channel x perm
-        % load baseline normalized real data to get channel labels and time
+        % load baseline normalized real data
         cd(locERPdir)
         if ~exist('norm_hit_timelock.mat','file') || ~exist('norm_miss_timelock.mat','file')
             continue
         end
         nh = load('norm_hit_timelock.mat'); nh = nh.norm_hit_timelock;
         nm = load('norm_miss_timelock.mat'); nm = nm.norm_miss_timelock;
-        timelock = nh;  % use to get labels/time
-        
-        % map permuted distributions to all_channels using timelock.label
-        for ichan = 1:length(timelock.label)
-            chan_name = timelock.label{ichan};
-            idx = find(strcmp(all_channels, chan_name));
-            if ~isempty(idx)
-                t_dist_max(idx, :, sess_counter) = perm_cond_max(ichan, :);
-                t_dist_min(idx, :, sess_counter) = perm_cond_min(ichan, :);
-            end
-        end
-        
+        valid_loc_paths{end+1} = fullfile(outp, sprintf('loc%d',locid)); %#ok<SAGROW>
+
         % map normalized avg to global arrays
         hit_avg_mapped = nan(num_channels, time_len);
         miss_avg_mapped = nan(num_channels, time_len);
@@ -495,21 +500,14 @@ for iloc_all = 1:length(all_locs)
         continue
     end
     
-    % reshape distributions and compute channel-wise percentiles
-    t_dist = cat(2, t_dist_max, t_dist_min);  % channels x (perms*2) x sess
-    % reshape into channels x (perms*2*sessions)
-    t_reshaped = reshape(t_dist, num_channels, []);
-    limit_max = zeros(num_channels,1);
-    limit_min = zeros(num_channels,1);
-    for c = 1:num_channels
-        valid_data = t_reshaped(c, ~isnan(t_reshaped(c,:)));
-        if isempty(valid_data)
-            limit_max(c) = NaN; limit_min(c) = NaN;
-        else
-            limit_max(c) = quantile(valid_data, 0.975);
-            limit_min(c) = quantile(valid_data, 0.025);
-        end
-    end
+    % Channel-wise percentiles.
+    % ERPdiff_avg below is the mean over sessions, so the null is averaged
+    % over sessions first and only then reduced to a max/min over time.
+    % Pooling per-session maxima compares a session-averaged value against a
+    % single-session null and is far too conservative.
+    [limit_max, limit_min] = pooled_perm_limits( ...
+        valid_loc_paths, all_channels, num_permutations, time_len, ...
+        'hit_lfp_avg.mat', 'miss_lfp_avg.mat');
     
     % average difference across sessions (handling NaNs)
     ERPdiff_avg = squeeze(nanmean(ERPdiff_r(1:sess_counter,:,:),1)); % channels x time
@@ -544,7 +542,7 @@ for iloc_all = 1:length(all_locs)
         end
         
         % Save figure for this location
-        saveDir = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/Hitvsmiss/erpdiff_hermes/lfp/per_loc';
+        saveDir = plotfolder;
         if ~isdir(saveDir), mkdir(saveDir); end
         cd(saveDir)
         fname = sprintf('ERPpooled_loc%d', locid);
@@ -561,8 +559,8 @@ for iloc_all = 1:length(all_locs)
     locid = all_locs(iloc_all);
     fprintf('Grand pooled plot for location %g\n', locid)
     
-    % collect t_dist for this location across all sessions (flatten)
-    all_tvals = [];
+    % collect the sessions that have this location
+    valid_loc_paths = {};   % sessions that actually have this location
     ERP_hit_all = [];
     ERP_miss_all = [];
     timevec = [];
@@ -573,10 +571,6 @@ for iloc_all = 1:length(all_locs)
         if ~exist(permfile,'file') || ~isdir(locERPdir)
             continue
         end
-        load(permfile,'perm_cond_max','perm_cond_min')
-        % collect non-nan values
-        all_tvals = [all_tvals; perm_cond_max(:); perm_cond_min(:)]; %#ok<AGROW>
-        
         cd(locERPdir)
         if ~exist('norm_hit_timelock.mat','file') || ~exist('norm_miss_timelock.mat','file')
             continue
@@ -586,15 +580,19 @@ for iloc_all = 1:length(all_locs)
         ERP_hit_all = cat(3, ERP_hit_all, nh.avg); % channels x time x session
         ERP_miss_all = cat(3, ERP_miss_all, nm.avg);
         timevec = nh.time;
+        valid_loc_paths{end+1} = fullfile(outp, sprintf('loc%d',locid)); %#ok<SAGROW>
     end
     
-    if isempty(all_tvals) || isempty(ERP_hit_all)
+    if isempty(ERP_hit_all)
         fprintf('No data to make grand pooled plot for location %g\n', locid)
         continue
     end
     
-    limit_max_all = quantile(all_tvals(~isnan(all_tvals)), 0.975);
-    limit_min_all = quantile(all_tvals(~isnan(all_tvals)), 0.025);
+    % Grand average over channels AND sessions, so the null is averaged the
+    % same way before the max/min over time is taken.
+    [~, ~, limit_max_all, limit_min_all] = pooled_perm_limits( ...
+        valid_loc_paths, all_channels, num_permutations, time_len, ...
+        'hit_lfp_avg.mat', 'miss_lfp_avg.mat');
     
     % compute grand average across channels & sessions
     % collapse channels then sessions
@@ -629,7 +627,7 @@ for iloc_all = 1:length(all_locs)
     ylim([-1 1]);
     grid on;
     
-    saveDir = '/mnt/hpc/projects/MWSampling/4Shivangi/Plots/Hitvsmiss/erpdiff_hermes/lfp/per_loc';
+    saveDir = plotfolder;
     if ~isdir(saveDir), mkdir(saveDir); end
     cd(saveDir)
     fname = sprintf('ERPpooled_GrandAvg_loc%d', locid);
@@ -639,3 +637,88 @@ for iloc_all = 1:length(all_locs)
 end
 
 disp('All done.')
+
+end  % animal loop
+
+%% ======================= pooled permutation null ======================= %%
+
+function [limit_max, limit_min, limit_max_all, limit_min_all] = ...
+    pooled_perm_limits(output_pathsp, all_channels, num_permutations, time_len, hitfile, missfile)
+% Null distribution for the SESSION-AVERAGED condition difference.
+%
+% For every permutation the permuted session differences are averaged over
+% sessions first, and only then reduced to a max and a min over time. That
+% puts the null on the same scale as the observed session average.
+%
+% The common baseline cancels in the difference, (hit-bsl)-(miss-bsl) =
+% hit-miss, so bsl_avg is not needed here.
+%
+% Reads the permuted averages written by the slurm jobs, because
+% perm_cond_max / perm_cond_min have already collapsed over time and cannot
+% be used to rebuild a session-averaged null. Results are cached so that
+% calling this twice with the same session list costs one pass.
+
+persistent cache_key cache_out
+
+key = [strjoin(output_pathsp(:)', '|') '|' hitfile '|' num2str(num_permutations)];
+if ~isempty(cache_key) && strcmp(key, cache_key)
+    [limit_max, limit_min, limit_max_all, limit_min_all] = deal(cache_out{:});
+    return
+end
+
+num_channels = length(all_channels);
+num_sessions = length(output_pathsp);
+
+perm_sum = zeros(num_permutations, num_channels, time_len, 'single');
+perm_cnt = zeros(num_channels, 1);
+
+for isess = 1:num_sessions
+
+    fprintf('  pooled null: session %d/%d\n', isess, num_sessions)
+
+    ref = load(fullfile(output_pathsp{isess}, 'ERP_real', hitfile));
+    idx = nan(length(ref.timelock.label),1);
+    for ichan = 1:length(ref.timelock.label)
+        j = find(strcmp(all_channels, ref.timelock.label{ichan}));
+        if ~isempty(j), idx(ichan) = j; end
+    end
+    ok = ~isnan(idx);
+    if ~any(ok)
+        warning('session %d: no channel matches all_channels', isess), continue
+    end
+    perm_cnt(idx(ok)) = perm_cnt(idx(ok)) + 1;
+
+    for iperm = 1:num_permutations
+        h = load(fullfile(output_pathsp{isess}, num2str(iperm), hitfile));
+        m = load(fullfile(output_pathsp{isess}, num2str(iperm), missfile));
+        d = h.timelock.avg - m.timelock.avg;
+        perm_sum(iperm, idx(ok), :) = perm_sum(iperm, idx(ok), :) + ...
+            reshape(single(d(ok,:)), 1, sum(ok), time_len);
+    end
+end
+
+cnt = perm_cnt;
+cnt(cnt == 0) = NaN;
+perm_avg = perm_sum ./ reshape(single(cnt), [1 num_channels 1]);
+clear perm_sum
+
+% per channel
+limit_max = nan(num_channels,1);
+limit_min = nan(num_channels,1);
+for ichan = 1:num_channels
+    x = squeeze(perm_avg(:,ichan,:));
+    if all(isnan(x(:))), continue, end
+    dist = double([max(x,[],2); min(x,[],2)]);
+    limit_max(ichan) = quantile(dist, 0.975);
+    limit_min(ichan) = quantile(dist, 0.025);
+end
+
+% grand average over channels
+pa   = squeeze(nanmean(perm_avg, 2));
+dist = double([max(pa,[],2); min(pa,[],2)]);
+limit_max_all = quantile(dist, 0.975);
+limit_min_all = quantile(dist, 0.025);
+
+cache_key = key;
+cache_out = {limit_max, limit_min, limit_max_all, limit_min_all};
+end

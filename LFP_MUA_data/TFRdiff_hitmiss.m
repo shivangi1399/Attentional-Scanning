@@ -55,6 +55,8 @@ min_sess_frac= 0.8;            % a time-frequency bin is tested only if at least
                                % this fraction of the pooled sessions has a
                                % valid (non-NaN) value there
 alpha_level  = 0.05;           % two-sided corrected alpha
+fade_level   = 0.25;           % opacity of the non-significant part of a TFR
+                               % map; 1 shows everything at full strength
 
 %% Analysis run
 % foi and toi are constrained by the epoch. The epochs run from -1 to 0.4 s,
@@ -66,7 +68,7 @@ alpha_level  = 0.05;           % two-sided corrected alpha
 % everything it produces - per session files, pooled results, figures - is
 % written into a folder of that name, so runs never overwrite each other.
 
-run_name = 'unified_4to80Hz_2cyc';
+run_name = 'pretarget_6to80Hz';
 
 switch run_name
 
@@ -355,12 +357,8 @@ for ianimal = 1:length(animals)
                 'Units','normalized','Position',[0 0 1 1]);
             for ichan = 1:nC
                 subplot(nrow,nrow,ichan)
-                imagesc(times, freqs, squeeze(real_avg(ichan,:,:)))
-                set(gca,'YDir','normal'), caxis([-clim clim]), hold on
-                m = squeeze(mask(ichan,:,:));
-                if any(m(:))
-                    contour(times, freqs, double(m), [0.5 0.5], 'k', 'LineWidth', 1)
-                end
+                draw_tfr(times, freqs, squeeze(real_avg(ichan,:,:)), ...
+                    squeeze(mask(ichan,:,:)), clim, 1, fade_level)
                 xline(0,'k--')
                 title(chans{ichan}, 'Interpreter','none', 'FontSize',6)
                 set(gca,'FontSize',6)
@@ -376,13 +374,8 @@ for ianimal = 1:length(animals)
             % channel average, with its own corrected significance
             fig = figure('Name',sprintf('TFR hit-miss %s (chan avg)',animalName), ...
                 'Units','centimeters','Position',[0 0 18 12]);
-            imagesc(times, freqs, real_chan)
-            set(gca,'YDir','normal')
-            caxis([-1 1]*quantile(abs(real_chan(~isnan(real_chan))), 0.99))
-            hold on
-            if any(mask_chan(:))
-                contour(times, freqs, double(mask_chan), [0.5 0.5], 'k', 'LineWidth', 1.5)
-            end
+            draw_tfr(times, freqs, real_chan, mask_chan, ...
+                quantile(abs(real_chan(~isnan(real_chan))), 0.99), 1.5, fade_level)
             xline(0,'k--','LineWidth',1)
             colormap(bluewhitered_local)
             c = colorbar; c.Label.String = 'log_{10}(hit/miss)';
@@ -400,6 +393,44 @@ for ianimal = 1:length(animals)
 end
 
 %% ============================== helper ================================= %%
+
+function draw_tfr(times, freqs, D, m, clim, lw, fade)
+% One time-frequency map with the significant region highlighted:
+% significant bins at full opacity inside a closed black outline, everything
+% else faded back, unusable (NaN) bins left blank.
+%
+% contour does NOT close a region that runs off the edge of the map - it draws
+% an open arc, which is exactly the case that is hardest to read. So the mask
+% is padded with a ring of zeros, and the coordinate vectors padded to match,
+% before contouring. The axis limits are restored afterwards so the padding
+% never shows.
+
+m = logical(m);
+
+h = imagesc(times, freqs, D);
+set(gca, 'YDir','normal', 'Color','w')
+caxis([-clim clim])
+hold on
+xl = xlim; yl = ylim;
+
+% fade the non-significant part, blank the unusable bins
+a          = fade * ones(size(D));
+a(m)       = 1;
+a(isnan(D)) = 0;
+set(h, 'AlphaData', a)
+
+if ~any(m(:)), return, end
+
+dx = mean(diff(times)); dy = mean(diff(freqs));
+xp = [times(1)-dx, times(:)', times(end)+dx];
+yp = [freqs(1)-dy, freqs(:)', freqs(end)+dy];
+mp = zeros(size(m)+2);
+mp(2:end-1, 2:end-1) = double(m);
+
+contour(xp, yp, mp, [0.5 0.5], 'k', 'LineWidth', lw)
+xlim(xl); ylim(yl)
+end
+
 
 function cmap = bluewhitered_local
 % symmetric blue-white-red colormap, so that zero is white
