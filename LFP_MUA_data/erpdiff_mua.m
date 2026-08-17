@@ -28,7 +28,7 @@ clc
 
 %% Define important variables
 
-zscore_run = 1;     % z-score session (over session) and save this z-scored data that should
+zscore_run = 0;     % z-score session (over session) and save this z-scored data that should
                     % be later on used for averaging across sessions -
                     % zscoring done already while finding the critical time
 first_runperm = 1;  % first time to run this permutation, if not, loads the matrix
