@@ -42,6 +42,8 @@ FOCUS_HZ   = [6 20 45];      % frequencies to draw phase maps for
 nPerm      = 1000;
 alpha      = 0.05;
 RELIABLE_Q = 0.5;            % drop bottom quantile of coh_mag per freq (NaN out)
+MIN_TRIALS_FRAC = 0.5;       % drop stimulus positions sampled with fewer than this
+                             % fraction of the median trials/position (0 = keep all)
 rng(2025);
 
 out_dir = fullfile(base,'Plots','scanning','wave_type','cp10_till_100', dv);
@@ -59,6 +61,7 @@ for ia = 1:numel(animals)
         'phase_progression','cp10_till_100', dv, 'phase_progression.mat');
     if ~isfile(pp), warning('No data for %s — skipping.', animalName); continue; end
     S = load(pp, 'pref_phase','coh_mag','freq','positions');
+    S = drop_undersampled_positions(S, pp, MIN_TRIALS_FRAC);
     freq = S.freq(:); nFreq = numel(freq);
     [nCh,~,nPos] = size(S.pref_phase);
 
@@ -223,6 +226,29 @@ fprintf('\nSaved wave-type figures under %s\n', out_dir);
 %% =====================================================================
 %% Cluster / utility helpers
 %% =====================================================================
+function [S, pos_keep] = drop_undersampled_positions(S, pp, min_frac)
+% Drop stimulus positions sampled with far fewer trials than the rest.
+% coh_mag is a resultant length, so its noise floor scales as 1/sqrt(n): an
+% under-sampled position gets an INFLATED magnitude and therefore MORE weight
+% in the across-position circular mean, which is backwards. pos_keep indexes
+% back into the ORIGINAL position numbering.
+pos_keep = 1:size(S.pref_phase,3);
+if min_frac <= 0, return; end
+w = load(pp, 'n_pos');
+if ~isfield(w,'n_pos') || isempty(w.n_pos), return; end
+trials = double(max(w.n_pos, [], 1));          % dead channels sit at 0 -> use max
+keep   = trials >= min_frac * median(trials);
+if all(keep), return; end
+for pd = find(~keep)
+    fprintf('  DROP position %d (coord %g): %d trials vs median %d — under-sampled\n', ...
+        pd, S.positions(pd), trials(pd), round(median(trials)));
+end
+pos_keep     = find(keep);
+S.pref_phase = S.pref_phase(:,:,keep);
+S.coh_mag    = S.coh_mag(:,:,keep);
+S.positions  = S.positions(keep);
+end
+
 function sigmask = cluster_correct(obs, thr, nullmat, alpha)
 % Cluster-based permutation across frequency. Cluster-forming threshold =
 % each frequency's own 95th-pctile null (thr). Observed contiguous runs of

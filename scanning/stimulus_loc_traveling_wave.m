@@ -106,6 +106,8 @@ alpha      = 0.05;
 CH_FILTER  = 'significant';        % coherence-sig channels only (as in planar wave)
 COH_SIG_ALPHA = 0.05;
 MIN_LOC    = 4;                    % min valid stimulus locations per channel
+MIN_TRIALS_FRAC = 0.5;             % drop stimulus positions sampled with fewer than this
+                                   % fraction of the median trials/position (0 = keep all)
 FREQ_RANGE = [2 100];               % Hz swept (low-freq band the hypothesis lives in)
 NV         = 30;                   % # speed steps
 V_VISUAL   = logspace(log10(1),   log10(200), NV);   % deg/s
@@ -128,7 +130,7 @@ SCREEN_XY = [1680 1050];  % screen pixels; fixation/fovea at the centre
 % neighbours after a failed fit, not measured (see header). Affects
 % visual_coherent (via Dc) and visual_arrival (via a(c,p)); plain visual never
 % uses RF centres and is unchanged either way.
-RF_VALID_ONLY = true;
+RF_VALID_ONLY = false;
 
 % Which estimators to run -- see TWO ESTIMATORS in the header. Both are
 % computed in one pass; the grids figure shows them side by side and each gets
@@ -189,6 +191,7 @@ for ia = 1:numel(animals)
         'phase_progression','cp10_till_100', dv, 'phase_progression.mat');
     if ~isfile(pp), warning('No data for %s — skipping.', animalName); continue; end
     S = load(pp, 'pref_phase','coh_mag','freq','positions');
+    [S, pos_keep] = drop_undersampled_positions(S, pp, MIN_TRIALS_FRAC);
     freq = S.freq(:); positions = S.positions(:);
     [nCh,nFreq,nPos] = size(S.pref_phase);
     fprintf('\n=== %s / %s : %d ch, %d freq, %d pos ===\n', animalName, upper(dv), nCh, nFreq, nPos);
@@ -244,6 +247,12 @@ for ia = 1:numel(animals)
     % touches these — it works entirely from phase_progression.mat.
     if any(strcmp(ESTIMATORS,'coherence'))
         [Ssum, Sperm, Wch] = get_trial_sums(base, animalName, dv, nCh, nPerm, RECOMPUTE_TRIAL_SUMS);
+        % The cache is built over ALL positions, so drop the same ones here —
+        % dim 2 has to stay aligned with d/d_vis/a_arr, which are now nPos-long.
+        % Wch is a global sum(|y|) over all trials and is left as-is: it is a
+        % per-channel scale that the R statistic normalises out.
+        Ssum  = Ssum(:, pos_keep, :);
+        Sperm = Sperm(:, pos_keep, :, :);
     end
 
   for ei = 1:numel(ESTIMATORS)
@@ -605,6 +614,29 @@ end
 %%  statistic at k=0, same gain / null / threshold / pooling code. R values are
 %%  not comparable between the two.
 %% =====================================================================
+function [S, pos_keep] = drop_undersampled_positions(S, pp, min_frac)
+% Drop stimulus positions sampled with far fewer trials than the rest.
+% Relevant to the 'phase' estimator only: as the Helpers note above says, its
+% weight |c_p| ~ 1/sqrt(n_p), so a position with few trials counts MORE, not
+% less. pos_keep indexes back into the ORIGINAL position numbering and must be
+% applied to anything else built over all positions (Ssum/Sperm).
+pos_keep = 1:size(S.pref_phase,3);
+if min_frac <= 0, return; end
+w = load(pp, 'n_pos');
+if ~isfield(w,'n_pos') || isempty(w.n_pos), return; end
+trials = double(max(w.n_pos, [], 1));          % dead channels sit at 0 -> use max
+keep   = trials >= min_frac * median(trials);
+if all(keep), return; end
+for pd = find(~keep)
+    fprintf('  DROP position %d (coord %g): %d trials vs median %d — under-sampled\n', ...
+        pd, S.positions(pd), trials(pd), round(median(trials)));
+end
+pos_keep     = find(keep);
+S.pref_phase = S.pref_phase(:,:,keep);
+S.coh_mag    = S.coh_mag(:,:,keep);
+S.positions  = S.positions(keep);
+end
+
 function [Robs, R0, Rnull_max, Gnull_max, Rnull, Gnull] = align_grid(pref, coh, coh_sig, f_use, fHz, d, Vs, MIN_LOC, nPerm)
 % ESTIMATOR 'phase', mode 'visual'. Incoherent across channels.
 % R(f,v) = mean over coherence-sig channels of the de-rotated resultant across

@@ -115,6 +115,8 @@ alpha      = 0.05;
 CH_FILTER  = 'significant';       % coherence-sig channels only (as in planar/stim-loc)
 COH_SIG_ALPHA = 0.05;
 MIN_CH     = 8;                   % min reliable channels to attempt a plane fit
+MIN_TRIALS_FRAC = 0.5;            % drop stimulus positions sampled with fewer than this
+                                  % fraction of the median trials/position (0 = keep all)
 FREQ_RANGE = [2 100];             % Hz swept
 NV         = 30;                  % # speed steps
 V_CORTICAL = logspace(log10(1), log10(300), NV);   % cortical wave speed (cm/s)
@@ -159,6 +161,7 @@ for ia = 1:numel(animals)
         'phase_progression','cp10_till_100', dv, 'phase_progression.mat');
     if ~isfile(pp), warning('No data for %s — skipping.', animalName); continue; end
     S = load(pp, 'pref_phase','coh_mag','freq','positions');
+    S = drop_undersampled_positions(S, pp, MIN_TRIALS_FRAC);
     freq = S.freq(:); [nCh,nFreq,nPos] = size(S.pref_phase);
     fprintf('\n=== %s / %s : %d ch, %d freq, %d pos ===\n', animalName, upper(dv), nCh, nFreq, nPos);
 
@@ -446,18 +449,35 @@ for ei = 1:nEst
     ylim(ax,[0 360]); set(ax,'YTick',0:90:360);
     xlabel(ax,'Frequency (Hz)'); ylabel(ax,'best-fit direction (deg)');
     title(ax, ttl,'FontSize',9); grid(ax,'on'); legend(ax,'Location','best','FontSize',7);
-    % bottom: best speed vs frequency (constant speed => real wave), sig marked
+    % bottom: best speed vs frequency, drawn LOG-LOG so that the two competing
+    % hypotheses are straight lines the reader can lay the data against:
+    %   real wave        one speed at every frequency        -> HORIZONTAL
+    %   fixed offset     constant wavenumber, v = 2*pi*f/k   -> slope +1
+    % On a linear frequency axis the second is a curve, so the comparison is not
+    % readable by eye; on log-log both are lines. Both reference lines are
+    % anchored on the geometric mean of the points actually being judged (the
+    % significant ones where they exist), so the comparison is about SHAPE, not
+    % about absolute speed.
     ax2 = subplot(2, numel(valid), numel(valid)+k); hold(ax2,'on');
-    plot(ax2, fr, G.(est)(ia).vbest(:), 'o', 'Color',[.75 .75 .75], 'MarkerSize',4);
-    if any(sg), plot(ax2, fr(sg), G.(est)(ia).vbest(sg), 'o', 'Color',cols(ia,:),'MarkerFaceColor',cols(ia,:),'MarkerSize',6); end
+    frv = fr(:); vb = G.(est)(ia).vbest(:);
+    okv = isfinite(vb) & isfinite(frv);
+    if any(sg & okv), sel = sg & okv; else, sel = okv; end
+    vref = exp(mean(log(vb(sel))));  fref = exp(mean(log(frv(sel))));
+    hW = plot(ax2, frv, vref*ones(size(frv)), 'k--', 'LineWidth',1.3);   % real wave
+    hO = plot(ax2, frv, vref*(frv/fref),     'k-.', 'LineWidth',1.3);    % fixed offset
+    plot(ax2, frv, vb, 'o', 'Color',[.75 .75 .75], 'MarkerSize',4);
+    if any(sg), plot(ax2, frv(sg), vb(sg), 'o', 'Color',cols(ia,:),'MarkerFaceColor',cols(ia,:),'MarkerSize',6); end
     yline(ax2, SPEED_OK(1), 'k:'); yline(ax2, SPEED_OK(2), 'k:');
-    set(ax2,'YScale','log'); ylim(ax2,[V_CORTICAL(1) V_CORTICAL(end)]);
+    set(ax2,'XScale','log','YScale','log');
+    ylim(ax2,[V_CORTICAL(1) V_CORTICAL(end)]); xlim(ax2,[min(frv) max(frv)]);
     xlabel(ax2,'Frequency (Hz)'); ylabel(ax2,'best-fit speed (cm/s)');
-    title(ax2,'best speed (flat across freq = real wave; dotted = plausible band)','FontSize',8);
+    legend(ax2, [hW hO], {'if a real wave: one speed','if a fixed offset: v \propto f'}, ...
+        'Location','southeast','FontSize',6.5,'Box','off');
+    title(ax2,'log-log: wave = flat dashed line, fixed offset = sloped dash-dot','FontSize',8);
     grid(ax2,'on');
   end
   sgtitle({sprintf('Best-fit planar-wave direction & speed vs frequency   |   %s', upper(EST_INFO.(est).short)), ...
-           'filled = significant increase in coherence   |   FLAT speed across frequency = real wave, RISING = constant wavenumber'}, ...
+           'filled = significant increase in coherence   |   bottom row is LOG-LOG: compare the points against the two reference lines'}, ...
            'FontSize',10);
   set(f3,'PaperPositionMode','auto'); pos=get(f3,'Position'); set(f3,'PaperUnits','points','PaperSize',pos(3:4));
   saveas(f3, fullfile(out_dir, ['derotation_direction_speed' EST_INFO.(est).tag tag '.pdf']));
@@ -485,6 +505,29 @@ end
 %% =====================================================================
 %% Helpers
 %% =====================================================================
+function [S, pos_keep] = drop_undersampled_positions(S, pp, min_frac)
+% Drop stimulus positions sampled with far fewer trials than the rest.
+% coh_mag is a resultant length, so its noise floor scales as 1/sqrt(n): an
+% under-sampled position gets an INFLATED magnitude and therefore MORE weight
+% in the across-position circular mean, which is backwards. pos_keep indexes
+% back into the ORIGINAL position numbering.
+pos_keep = 1:size(S.pref_phase,3);
+if min_frac <= 0, return; end
+w = load(pp, 'n_pos');
+if ~isfield(w,'n_pos') || isempty(w.n_pos), return; end
+trials = double(max(w.n_pos, [], 1));          % dead channels sit at 0 -> use max
+keep   = trials >= min_frac * median(trials);
+if all(keep), return; end
+for pd = find(~keep)
+    fprintf('  DROP position %d (coord %g): %d trials vs median %d — under-sampled\n', ...
+        pd, S.positions(pd), trials(pd), round(median(trials)));
+end
+pos_keep     = find(keep);
+S.pref_phase = S.pref_phase(:,:,keep);
+S.coh_mag    = S.coh_mag(:,:,keep);
+S.positions  = S.positions(keep);
+end
+
 function [Robs, R0, Rnull_max, Gnull_max, DIRbest, Rnull, Gnull] = derotate_grid(Zmap, coh_sig, f_use, fHz, XY, Vs_mm, Th, MIN_CH, nPerm)
 % Coherent planar-wave plane fit by de-rotation over the (frequency × speed ×
 % direction) grid.
