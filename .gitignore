@@ -6,6 +6,8 @@ masters_code/
 scanning/traveling_wave_H2_H1.m
 scanning/README_RESULTS.md
 code/scanning/checks
+code/scanning/wave_behaviour_coupling.m
+code/scanning/ongoing_excitability_wave.m
 name_change.m
 
 # Binary/data files
