@@ -279,7 +279,42 @@ for p = 1:nP
 
             null_d = P_hi - P_lo;                  % [nPerm x nFreq]
             tmax   = max(null_d, [], 2);            % one-sided max-stat
-            t_d    = quantile(tmax, 0.95);
+
+            % DEGENERACY GUARD. A null that does not VARY across
+            % permutations is not a null, and "obs >= threshold" on it is
+            % not a test -- the threshold has collapsed onto the observed
+            % curve, so the comparison fires at every frequency where both
+            % sides are zero, or at the single argmax bin. Two ways this
+            % happens here, both silent:
+            %
+            %   H4-H1 in correlation and regression
+            %       circ_corrcl returns a non-negative magnitude per
+            %       channel and a partial R^2 has no phase to average
+            %       complexly, so pooling channels before and after taking
+            %       the magnitude is the same arithmetic. Observed AND null
+            %       differences are identically zero by construction --
+            %       verified, max|H4-H1| = 0 across all 1000 perm curves.
+            %
+            %   detection x coherence (before the inverted-miss-phase fix)
+            %       the ITC perm curves differed between levels by a
+            %       constant equal to the observed difference, so every
+            %       permutation returned the same value.
+            %
+            % Scaled against the magnitude of the curves being differenced,
+            % not against zero: the collapse leaves floating-point crumbs
+            % around 1e-17 on a statistic of 0.06, and a bare std > 0 lets
+            % those through. Leaving diff_thr as NaN and diff_sig empty is
+            % what marks the pair UNTESTED downstream -- which is not the
+            % same as tested-and-null, and must not be read as one.
+            scale = max([abs(v_hi(:)); abs(v_lo(:)); eps]);
+            if ~(std(tmax) > 1e-9 * scale)
+                fprintf(['  no paired test: %-6s | %-18s | %-8s ' ...
+                         '(null has no spread across permutations)\n'], ...
+                        cmp_short{c}, pipe_labels{p}, dv_labels{d});
+                continue
+            end
+
+            t_d = quantile(tmax, 0.95);
 
             diff_thr(p,c,d)       = t_d;
             diff_sig{p,c,d}       = diff_obs{p,c,d}(:)' >= t_d;
@@ -287,6 +322,15 @@ for p = 1:nP
         end
     end
 end
+
+% Which pairs actually got a test. diff_thr stays NaN when the pair was
+% skipped -- missing null arrays, or the degeneracy guard above -- and the
+% figures below use this to draw UNTESTED differently from TESTED-AND-NULL.
+% Rendering them the same way is how a comparison that could not be run
+% ends up being read as evidence of no effect.
+pair_tested = ~isnan(diff_thr);          % [nP x nC x nDV]
+fprintf('\nPaired comparisons: %d of %d testable\n\n', ...
+        sum(pair_tested(:)), numel(pair_tested));
 
 %% Figure 1: Monkey-average overlay with per-hypothesis significance shading
 f1 = figure('Name','H1-H4 overlay — monkey avg', ...
@@ -382,6 +426,13 @@ for d = 1:nDV
                 10, cmp_col(c,:),'filled','HandleVisibility','off');
         end
         ylim(yl);
+
+        % No testable pair in this panel: the curves are still real, but
+        % nothing here has been compared with anything.
+        if any_line && ~any(pair_tested(p,:,d))
+            text(mean(xlim), yl(1)+0.06*(yl(2)-yl(1)), 'paired null degenerate — not tested', ...
+                'HorizontalAlignment','center','FontSize',7,'Color',[0.45 0.45 0.48]);
+        end
 
         if d==1, title(sprintf('%s — %s',pipe_labels{p},dv_labels{d}),'FontSize',8);
         else,    title(dv_labels{d},'FontSize',8); end
@@ -497,6 +548,9 @@ for p = 1:nP; for c = 1:nC; for d = 1:nDV
     s = diff_sig{p,c,d};
     if ~isempty(s), n_sig_pair(p,c,d) = sum(s); end
 end; end; end
+% NaN, not 0, where the pair was never tested: a zero-height bar says
+% "tested, found nothing", which is the one thing these pairs do not say.
+n_sig_pair(~pair_tested) = NaN;
 
 f6 = figure('Name','N sig freqs per paired comparison', ...
     'Units','centimeters','Position',[1 1 54 28]);
@@ -506,8 +560,14 @@ for d = 1:nDV
     for p = 1:nP
         ax6 = subplot(nDV,nP,(d-1)*nP+p);
         vals = squeeze(n_sig_pair(p,:,d));
-        b = bar(1:nC, vals, 'FaceColor','flat');
+        b = bar(1:nC, vals, 'FaceColor','flat');       % NaN draws no bar
         for c = 1:nC, b.CData(c,:) = cmp_col(c,:); end
+        hold(ax6,'on');
+        yl6 = ylim(ax6);
+        for c = find(isnan(vals))
+            text(ax6, c, 0.05*yl6(2), 'not tested', 'Rotation',90, ...
+                'HorizontalAlignment','left','FontSize',6,'Color',[0.45 0.45 0.48]);
+        end
         set(ax6,'XTick',1:nC,'XTickLabel',cmp_short, ...
             'XTickLabelRotation',30,'FontSize',7);
         ylabel('n sig freqs','FontSize',7);
@@ -516,7 +576,8 @@ for d = 1:nDV
     end
 end
 sgtitle({'N significant frequencies per paired comparison (monkey avg)', ...
-    'tests positions / difficulty / channels — significant only if exceeds Jensen advantage'}, ...
+    'tests positions / difficulty / channels — significant only if exceeds Jensen advantage', ...
+    'no bar + "not tested" = the paired null was degenerate, NOT a null result'}, ...
     'FontSize',11,'FontWeight','bold');
 print(f6, fullfile(save_dir,'compare_hypotheses_paired_nsig.pdf'),'-dpdf');
 fprintf('Saved: %s\n', fullfile(save_dir,'compare_hypotheses_paired_nsig.pdf'));
@@ -534,6 +595,12 @@ for d = 1:nDV
         ax7 = subplot(nDV,nP,(d-1)*nP+p);
         img = ones(nFreq, nC, 3);   % white background
         for c = 1:nC
+            % grey the whole column where no test was possible, so it
+            % cannot be read as a column of non-significant frequencies
+            if ~pair_tested(p,c,d)
+                for ch = 1:3, img(:,c,ch) = 0.82; end
+                continue
+            end
             sig = diff_sig{p,c,d};
             if isempty(sig) || numel(sig) ~= nFreq, continue; end
             mask = sig(:);
@@ -552,7 +619,8 @@ for d = 1:nDV
     end
 end
 sgtitle({'Paired-test significance pattern (monkey avg)', ...
-    'coloured = observed H_n - H_{n-1} exceeds Jensen advantage (95% max-stat); white = not significant'}, ...
+    ['coloured = observed H_n - H_{n-1} exceeds Jensen advantage (95% max-stat); ' ...
+     'white = not significant; grey = not testable (degenerate null)']}, ...
     'FontSize',11,'FontWeight','bold');
 print(f7, fullfile(save_dir,'compare_hypotheses_paired_sig_pattern.pdf'),'-dpdf');
 fprintf('Saved: %s\n', fullfile(save_dir,'compare_hypotheses_paired_sig_pattern.pdf'));

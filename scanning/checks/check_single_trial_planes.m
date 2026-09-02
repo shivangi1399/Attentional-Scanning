@@ -51,7 +51,7 @@ GRID        = 8;
 K_MAX       = 2.5;          % rad/mm, top of the swept wavenumber grid
 N_K         = 26;           % wavenumber steps
 N_THETA     = 24;           % direction steps (15 deg each)
-nPerm       = 10;           % channel-position shuffles per frequency
+nPerm       = 1000;          % channel-position shuffles per frequency
 MAX_SESS    = Inf;          % set to e.g. 3 for a quick run
 MIN_TRIALS  = 40;
 rng(0);
@@ -129,6 +129,7 @@ for ia = 1:numel(animals)
         median(M(:,2)), median(M(:,1))/max(median(M(:,2)),eps));
     fprintf('    slope k~f, raw               %+.2f\n', sl_raw);
     fprintf('    slope k~f, EXCESS over null  %+.2f    <-- the number to read\n', sl_exc);
+    fprintf('    freqs clamped at floor       %d of %d   (excess<=0; these bias the slope)\n', sum(M(:,1)-M(:,2)<=0), numel(freq));
     fprintf('    direction concentration      %.2f     (0 = random per trial, 1 = identical)\n', ...
         median(M(:,3)));
     if sl_exc > 0.6

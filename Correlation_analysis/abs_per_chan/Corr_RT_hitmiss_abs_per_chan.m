@@ -155,7 +155,12 @@ for a = 1:numel(animals)
         % ITC with inverted miss phases
         % Tests specifically whether hits and misses are at opposite phases
         phase_inv = phase;
-        phase_inv(miss_idx, :) = mod(phase(miss_idx, :) + pi, 2*pi) - pi;
+        % + pi only. mod(x+pi,2*pi)-pi is the WRAP-into-[-pi,pi) idiom,
+        % and the phases are already wrapped, so it added pi and took it
+        % straight back off - the inversion was a no-op and this ITC was
+        % plain ITC over hits and misses pooled, blind to the labels.
+        % exp(1i*.) does not care that the result leaves [-pi,pi).
+        phase_inv(miss_idx, :) = phase(miss_idx, :) + pi;
 
         for foi = 1:nFreq
             itc(1, foi) = abs(mean(exp(1i * phase_inv(:, foi))));

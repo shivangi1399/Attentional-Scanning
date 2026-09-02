@@ -113,7 +113,8 @@ for m = 1:length(coh_measures)
                 if strcmp(key,'hit_miss')
                     miss_c = ~hit_labels(mask);
                     ph_inv = ph_c;
-                    ph_inv(miss_c) = mod(ph_c(miss_c)+pi, 2*pi) - pi;
+                    % + pi only: mod(x+pi,2*pi)-pi is the WRAP idiom and the phases are already wrapped, so it was a no-op
+                    ph_inv(miss_c) = ph_c(miss_c) + pi;
                     cplx_cell(c) = mean(exp(1i * ph_inv));
                 else
                     dv_c = a_ph.(spec.field)(idx_g, ch);
@@ -523,7 +524,8 @@ for a = 1:nAnimals
                     if strcmp(key,'hit_miss')
                         miss_c = ~hit_lab(mk);
                         ph_inv = ph_c;
-                        ph_inv(miss_c) = mod(ph_c(miss_c)+pi,2*pi)-pi;
+                        % + pi only: mod(x+pi,2*pi)-pi is the WRAP idiom and the phases are already wrapped, so it was a no-op
+                        ph_inv(miss_c) = ph_c(miss_c)+pi;
                         cp(c) = mean(exp(1i*ph_inv));
                     else
                         dv_c = a_phd.(spec.field)(idx_g, ch);

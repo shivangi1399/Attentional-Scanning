@@ -38,7 +38,8 @@ for perm = 1:permut_n
 
     % 2) ITC with inverted miss phases — store complex mean, derive magnitude
     phase_combined = phase;
-    phase_combined(miss_idx, :) = mod(phase(miss_idx, :) + pi, 2*pi) - pi;
+    % + pi only: mod(x+pi,2*pi)-pi is the WRAP idiom and the phases are already wrapped, so it was a no-op
+    phase_combined(miss_idx, :) = phase(miss_idx, :) + pi;
 
     for foi = 1:nFreq
         itc_perm_complex(perm, foi) = mean(exp(1i * phase_combined(:, foi)));

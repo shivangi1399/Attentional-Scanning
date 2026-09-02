@@ -31,11 +31,13 @@
 %   fig05_phase_measures.pdf      monkey-average coherence / correlation /
 %                                 regression R^2 for MUA, LFP, RT, detection
 %   fig06_hypotheses.pdf          H1-H4 overlay, monkey average
+%   fig06b_hypothesis_differences.pdf   paired H_n - H_(n-1)
+%                                 differences against the Jensen null
 %   fig07a_phase_progression.pdf  preferred-phase systematicity vs frequency
 %   fig07b_pgd.pdf                pooled z-PGD vs frequency, plus the
 %                                 clearest example position in each animal
 %   fig07c_derotation.pdf         frequency x speed de-rotation grids,
-%                                 cortical and along the stimulus axis
+%                                 cortical and the three stimulus geometries
 %   fig07d_per_position_<animal>.pdf   per-position phase maps at the two
 %                                 LFP-coherence peak frequencies, wrapped
 %                                 over two rows per frequency
@@ -135,6 +137,7 @@ DO_FIG3  = 1;    % fig03  rectified evoked response, hit vs miss
 DO_FIG4  = 1;    % fig04  TFR + pre-stimulus periodic spectrum
 DO_FIG5  = 1;    % fig05  monkey-average phase measures
 DO_FIG6  = 1;    % fig06  H1-H4 hypothesis overlay
+DO_FIG6B = 1;    % fig06b paired H_n - H_(n-1) differences
 DO_FIG7A = 1;    % fig07a phase-progression systematicity
 DO_FIG7B = 1;    % fig07b pooled z-PGD + example position per animal
 DO_FIG7C = 1;    % fig07c de-rotation grids
@@ -705,6 +708,292 @@ end
 
 
 %% =====================================================================
+%% Figure 6b — WRITES fig06b_hypothesis_differences.pdf
+%% paired H_n - H_(n-1) differences, monkey average
+%% =====================================================================
+% Source: the same monkey_avg_results.mat files as Figure 6, read for the
+% observed curve AND for the per-permutation null curve (perm_monkey_avg,
+% [nPerm x nFreq]) that Figure 6 has no use for.
+%
+% Companion to Figure 6, and the question Figure 6 cannot settle. There,
+% every hypothesis is tested against its own null, so a bar under H4 and
+% none under H1 says only that both were compared with chance - not that
+% relaxing the pooling level found anything. It cannot say that, because
+% mean(|x|) >= |mean(x)|: H2-H4 are LARGER than H1 by construction, whether
+% or not phase carries any information. That built-in head start is the
+% Jensen advantage.
+%
+% The PAIRED test removes it. Every pipeline seeds rng(2025) before drawing
+% its permutation indices, so permutation i is the SAME shuffled DV in all
+% four hypothesis files. Differencing them permutation by permutation gives
+% a null that contains the Jensen advantage and nothing else:
+%     null(i,f) = H_n,perm(i,f) - H_(n-1),perm(i,f)
+%     threshold = 95th percentile of max_f null(i,f)   (one-sided, max-stat)
+%     significant where  H_n,obs(f) - H_(n-1),obs(f) >= threshold
+% The recipe is compare_hypotheses.m's; it is recomputed here rather than
+% loaded because that script only ever wrote PDFs.
+%
+% WHAT EACH DIFFERENCE MEANS
+%   H2-H1  positions disagree on preferred phase
+%   H3-H2  difficulty levels disagree, within a position
+%   H4-H1  channels disagree on preferred phase
+% H4-H2 and H4-H3 are not drawn: H4 relaxes a different axis (channel) from
+% H2 and H3 (position, difficulty), so those pairs are not one step of a
+% ladder and their difference has no clean reading.
+%
+% WHAT IS DRAWN
+%   solid   the observed difference
+%   dashed  the mean of the paired null - what this level buys for free.
+%           The GAP between the two is the whole result: a solid curve far
+%           above zero but sitting ON its dashed line is pure Jensen.
+%   bars    paired-test significant, one row per comparison, in the strip
+%           reserved above the data exactly as in Figure 6
+% No threshold lines: three dotted horizontals per panel competed with the
+% curves for the same space, and the bars already say where the threshold
+% is cleared.
+%
+% COLOUR. Row hue still names the measured quantity, as everywhere else.
+% Within a row each difference takes the ladder rung of its UPPER endpoint -
+% H2-H1 in H2's colour, H3-H2 in H3's, H4-H1 in H4's - so a curve here and
+% the curve it was built from in Figure 6 are the same colour. Rung 1 goes
+% unused, correctly: no difference has H1 on top. The null means are in the
+% curve's own hue rather than the usual null grey, because three grey dashes
+% in one panel could not be matched back to the curves they belong to; here
+% the DASH says "null" and the hue still says which curve.
+%
+% The regression column is the partial R^2, as in Figure 6. Regression
+% R_phase - the fourth column of compare_hypotheses.m's version of this
+% figure - is left out: it is in coefficient units rather than a variance
+% share, and no per-hypothesis threshold was ever saved for it.
+%
+% WHAT CANNOT BE TESTED, AND WHY IT IS NOT A NULL RESULT
+%   Correlation, every row: H4-H1 is identically zero BY CONSTRUCTION, not
+%   by measurement. circ_corrcl already returns a non-negative magnitude per
+%   channel, so averaging magnitudes and taking the magnitude of the average
+%   are the same arithmetic across channels. Observed and null are both flat
+%   zero, and the curve sits on the zero line.
+%   Regression, every row: H4-H1 is the same collapse. A partial R^2 has no
+%   phase to average complexly, so the H4 and H1 result files are identical
+%   to the last bit - verified, max|H4-H1| = 0 for observed AND for all 1000
+%   permutation curves.
+%   Detection x coherence: the ITC permutation curves differ between levels
+%   by a CONSTANT equal to the observed difference, so the paired null has
+%   no spread at all (std across permutations = 9e-17). Nothing in that
+%   panel can be tested; it is labelled in the panel itself.
+%   Regression x Detection: H3 is dropped by the degeneracy guard below, so
+%   H3-H2 is absent rather than zero - the per-position x difficulty strata
+%   leave almost no residual variance and the partial R^2 explodes.
+% All four are ABSENCE OF A TEST, not evidence of no effect. The guard in
+% the loop refuses them rather than reporting "obs >= threshold" on a
+% threshold that has collapsed onto the observed curve - which is what
+% compare_hypotheses.m does, and why its version of this figure carries
+% full-width significance dots under six panels.
+
+if DO_FIG6B
+    fprintf('\n===== Figure 6b: paired hypothesis differences =====\n');
+
+    hypd     = {'complex','abs_per_pos','abs_per_pos_diff','abs_per_chan'};
+    hypd_lab = {'H1','H2','H3','H4'};
+
+    % hi/lo index into hypd; the pair is drawn in the ladder rung of hi.
+    MINUS = char(8722);                    % true minus, not a hyphen
+    cmpd = struct( ...
+        'hi',  {2, 3, 4}, ...
+        'lo',  {1, 2, 1}, ...
+        'lab', {['H2' MINUS 'H1'], ['H3' MINUS 'H2'], ['H4' MINUS 'H1']});
+    cmp_order = [2 1 3];    % H4-H1 painted last: it is the smallest step
+
+    dvsd = struct( ...
+        'lab',      {'LFP','MUA','Reaction time','Detection'}, ...
+        'key',      {'lfp','mua','rt','det'}, ...
+        'coh_sub',  {'lfp','mua','RT','hit_miss_itc'}, ...
+        'coh_file', {'monkey_avg_results.mat','monkey_avg_results.mat', ...
+                     'monkey_avg_results.mat','monkey_avg_results_itc.mat'}, ...
+        'coh_var',  {'coh_monkey_avg','coh_monkey_avg','coh_monkey_avg','itc_monkey_avg'}, ...
+        'coh_perm', {'perm_monkey_avg','perm_monkey_avg','perm_monkey_avg','perm_monkey_avg_itc'}, ...
+        'corr_sub', {'lfp','mua','RT','hit_miss'}, ...
+        'corr_file',{'monkey_avg_results.mat','monkey_avg_results.mat', ...
+                     'monkey_avg_results.mat','monkey_avg_results_pos.mat'}, ...
+        'corr_var', {'corr_monkey_avg','corr_monkey_avg','corr_monkey_avg','pos_monkey_avg'}, ...
+        'corr_perm',{'perm_monkey_avg','perm_monkey_avg','perm_monkey_avg','perm_monkey_avg_pos'}, ...
+        'reg_dv',   {'LFP_ERP_ampl_all','MUA_ERP_ampl_all','RT','hit_miss'});
+
+    pipesd = {'Phase coherence','Phase correlation',['Regression ' R2LAB]};
+    nD = numel(dvsd); nP = numel(pipesd); nCmp = numel(cmpd);
+
+    f6b = new_fig(19, 24);
+    M6b = [2.3 1.3 0.6 3.4 1.9 1.7];
+    % Bottom-right, as in Figure 6. That panel carries two curves and no
+    % bars, so the key covers nothing - worth re-checking if regression x
+    % detection ever gains significance at high frequencies.
+    LEG_PANEL_B = 12;    % panel l
+    lets = panel_letters(nD*nP);
+    leg_done_b = false;
+
+    for d = 1:nD
+        for p = 1:nP
+            k  = (d-1)*nP + p;
+            ax = axes('Position', grid_pos(f6b, nD, nP, k, M6b)); hold(ax,'on');
+            panel_label(ax, lets{k}, FONT_SIZE_BIG);
+
+            lad = PAL.lad.(dvsd(d).key);      % 4x3, dark to light
+
+            % One observed curve and one [nPerm x nFreq] null per level.
+            Vh = cell(1,numel(hypd)); Ph = cell(1,numel(hypd)); fq = [];
+            for h = 1:numel(hypd)
+                switch p
+                    case 1
+                        % detection has no coherence file of its own - the
+                        % ITC that stands in for it lives under correlation
+                        root = ternary(strcmp(dvsd(d).coh_sub,'hit_miss_itc'), ...
+                                       'phase_correlation', 'phase_coherence');
+                        f = fullfile(comb,root,hypd{h},cp,dvsd(d).coh_sub, ...
+                                     'all_loc_difflev',dvsd(d).coh_file);
+                        % '' for the threshold field: the per-hypothesis
+                        % threshold is Figure 6's business, not this one's
+                        [Vh{h}, ~, fqh] = load_curve(f, dvsd(d).coh_var, '', 'freq');
+                        Ph{h} = load_null(f, dvsd(d).coh_perm);
+                    case 2
+                        f = fullfile(comb,'phase_correlation',hypd{h},cp, ...
+                                     dvsd(d).corr_sub,'all_loc_difflev',dvsd(d).corr_file);
+                        [Vh{h}, ~, fqh] = load_curve(f, dvsd(d).corr_var, '', 'freq');
+                        Ph{h} = load_null(f, dvsd(d).corr_perm);
+                    case 3
+                        f = fullfile(comb,'multi_lin_reg',hypd{h},cp,dvsd(d).reg_dv, ...
+                                     'monkey_avg_results.mat');
+                        [Vh{h}, ~, fqh] = load_reg(f);
+                        Ph{h} = load_null(f, 'perm_monkey_avg', 'phase');
+                end
+                if isempty(fq), fq = fqh; end
+                % Same degeneracy guard as Figure 6: a partial R^2 outside
+                % [0,1] is a failed fit, not a small effect. Dropping the
+                % LEVEL here drops both differences that stand on it, which
+                % is why the guard runs before the pairs are formed.
+                if ~isempty(Vh{h}) && (any(~isfinite(Vh{h})) || ...
+                        (p == 3 && (max(Vh{h}) > 1 || min(Vh{h}) < 0)))
+                    fprintf('  dropped %s / %s / %s: degenerate values (%.3g to %.3g)\n', ...
+                            hypd_lab{h}, pipesd{p}, dvsd(d).lab, min(Vh{h}), max(Vh{h}));
+                    Vh{h} = []; Ph{h} = [];
+                end
+            end
+
+            % Paired difference, its null mean and its significance mask.
+            Dc = cell(1,nCmp); NM = cell(1,nCmp); SG = cell(1,nCmp);
+            colD = cell(1,nCmp);
+            for c = 1:nCmp
+                colD{c} = lad(cmpd(c).hi,:);
+                vh = Vh{cmpd(c).hi}; vl = Vh{cmpd(c).lo};
+                if isempty(vh) || isempty(vl) || numel(vh) ~= numel(vl), continue; end
+                Dc{c} = vh(:)' - vl(:)';
+                Phi = Ph{cmpd(c).hi}; Plo = Ph{cmpd(c).lo};
+                if isempty(Phi) || isempty(Plo) || ~isequal(size(Phi), size(Plo)), continue; end
+                nd = Phi - Plo;                          % [nPerm x nFreq]
+                tm = max(nd, [], 2);
+                % A null that does not VARY across permutations is not a
+                % null, and the test built on it is not a test. Three ways
+                % this happens here, all of them silent:
+                %   correlation H4-H1  circ_corrcl is already a non-negative
+                %                      per-channel magnitude, so H4 and H1
+                %                      are the same arithmetic - observed
+                %                      and null are both identically zero
+                %   regression H4-H1   same collapse: a partial R^2 has no
+                %                      phase to average complexly, so the
+                %                      H4 and H1 files are byte-identical
+                %   detection x        the ITC null curves differ between
+                %   coherence          levels by a CONSTANT equal to the
+                %                      observed difference, so every
+                %                      permutation gives the same value
+                % In all three the threshold collapses onto the observed
+                % curve and "obs >= threshold" fires - at every frequency
+                % where both sides are zero, or at the single argmax bin.
+                % That is what put full-width bars under six panels.
+                % Scaled against the magnitude of the curves being
+                % differenced, not against zero: the collapse leaves
+                % floating-point crumbs (1e-17 on a statistic of 0.06), and
+                % a bare std(tm) > 0 passes those straight through.
+                scale = max([abs(vh(:)); abs(vl(:)); eps]);
+                if ~(std(tm) > 1e-9 * scale)
+                    fprintf(['  no paired test: %s / %s / %s ' ...
+                             '(null has no spread across permutations)\n'], ...
+                            cmpd(c).lab, pipesd{p}, dvsd(d).lab);
+                    continue
+                end
+                NM{c} = mean(nd, 1, 'omitnan');
+                SG{c} = Dc{c} >= quantile(tm, 0.95);
+            end
+            tested = ~cellfun(@isempty, SG);
+
+            allv = [Dc{:}, NM{:}];
+            if isempty(allv), axis(ax,'off'); continue; end
+            nfq = max(cellfun(@numel, Dc));
+            if isempty(fq) && numel(FREQ_AXIS) == nfq, fq = FREQ_AXIS; end
+            if isempty(fq), fq = 1:nfq; end
+
+            % Zero has to stay in view - it is the reference the whole panel
+            % is read against - so it is folded into the data range rather
+            % than left to fall outside it.
+            yl_dat = pad_lim([allv 0]);
+            rng0   = yl_dat(2) - yl_dat(1);
+            extra  = 0.45;                    % three rows, not four
+            yl     = [yl_dat(1), yl_dat(2) + extra*rng0];
+            R      = yl(2) - yl(1);
+            strip  = [yl(2) - 0.26*R, yl(2) - 0.02*R];
+
+            % zero line first, so every curve sits on top of it
+            plot(ax, [min(fq) max(fq)], [0 0], '-', ...
+                 'Color', PAL.grey_lt, 'LineWidth', 0.75);
+            for c = 1:nCmp
+                if isempty(NM{c}), continue; end
+                plot(ax, fq, NM{c}, '--', 'Color', colD{c}, 'LineWidth', 0.9);
+            end
+            draw_curves(ax, fq, Dc, colD, repmat(1.5,1,nCmp), cmp_order, gobjects(1,nCmp));
+            for c = 1:nCmp
+                if isempty(SG{c}), continue; end
+                sig_ticks(ax, fq, SG{c}, strip, c, nCmp, colD{c});
+            end
+
+            % A panel where nothing could be tested has to say so, or its
+            % bare curves read as a measured null. Only the detection x
+            % coherence panel is in that state; elsewhere the untestable
+            % H4-H1 is the flat zero on the zero line, which speaks for
+            % itself.
+            if ~any(tested)
+                text(ax, 0.5, 0.06, 'paired null degenerate - not tested', ...
+                     'Units','normalized', 'HorizontalAlignment','center', ...
+                     'Color', PAL.grey, 'FontSize', get(groot,'DefaultAxesFontSize')-1);
+            end
+
+            xlim(ax,[min(fq) max(fq)]); ylim(ax, yl);
+            if d==nD, xlabel(ax,'Frequency (Hz)'); end
+            if p==1,  ylabel(ax, sprintf('%s\n%s magnitude', dvsd(d).lab, char(916))); end
+            if d==1,  col_header(ax, pipesd{p}, FONT_SIZE_BIG); end
+            tidy(ax);
+
+            % One neutral key for the whole grid, for the same reason as in
+            % Figure 6: the hue changes row by row, so a coloured key would
+            % claim one row's hue for all twelve panels. What every panel
+            % shares is the lightness step, and these are rungs 2-4 of the
+            % neutral ladder - the same three rungs the curves use.
+            if k == LEG_PANEL_B && ~leg_done_b
+                gl = neutral_ladder(numel(hypd));
+                dh = gobjects(1, nCmp);
+                for c = 1:nCmp
+                    dh(c) = plot(ax, NaN, NaN, '-', 'Color', gl(cmpd(c).hi,:));
+                end
+                lg = legend(dh, {cmpd.lab}, 'Location','northeast');
+                style_legend(lg);
+                place_legend(ax, lg, 'right', 0.99);
+                leg_done_b = true;
+            end
+        end
+    end
+    supertitle(f6b, {'Paired differences: what each pooling level finds that the level below it does not', ...
+        'Solid = observed; dashed = the paired null mean (the Jensen advantage); bars = significant above it'});
+    save_fig(f6b, out_dir, 'fig06b_hypothesis_differences');
+end
+
+
+%% =====================================================================
 %% Figure 7a — WRITES fig07a_phase_progression.pdf
 %% preferred phase versus stimulus position
 %% =====================================================================
@@ -989,15 +1278,46 @@ end
 % GAIN, coherence after de-rotation minus coherence at v = infinity, on a
 % frequency x speed grid.
 %
-% Top row    ACROSS CORTEX, speeds in m/s along the array.
-% Bottom row ALONG THE STIMULUS AXIS, speeds in deg/s in visual space -
-%            i.e. a wave that follows the stimulus, not the cortical sheet.
-% Columns are the two estimators, which differ in what they treat as the
+% ROWS are the four de-rotation geometries — what distance goes into k*d, and
+% therefore what kind of wave is being tested:
+%   Across cortex          k*d along the array, speeds in cm/s. A wave sweeping
+%                          the cortical sheet, stimulus location ignored.
+%   Stimulus eccentricity  k*d_p, d_p = eccentricity of stimulus location p,
+%                          speeds in deg/s. Resultant taken per channel and
+%                          then averaged, so each channel's constant offset
+%                          (and with it any per-electrode delay) cancels.
+%   Fovea-out, coherent    k*(d_p + D_c), D_c = the electrode's own RF
+%                          eccentricity, summed COHERENTLY across channels so
+%                          that the per-electrode delay is visible. One wave
+%                          sweeping outward from the fovea, independent of
+%                          where the stimulus is. It assumes a common phase
+%                          reference, so a band here is trustworthy but a null
+%                          is ambiguous — an unmodelled offset can only lower R.
+%   Arrival at RF          k*(d_p + a(c,p)), a = visual-field separation
+%                          between channel c's RF centre and location p: the
+%                          stimulus lands on its own retinotopic patch and
+%                          spreads from there at speed v. a varies across
+%                          locations WITHIN a channel, so it survives the
+%                          per-channel resultant — the only geometry that says
+%                          "the wave starts where the stimulus is" while
+%                          staying robust to per-channel offsets.
+% The three stimulus rows are the three modes of scanning/stimulus_loc_traveling_wave.m
+% ('visual', 'visual_coherent', 'visual_arrival'); the cortical row comes from
+% planar_wave_derotation.m.
+%
+% COLUMNS are the two estimators, which differ in what they treat as the
 % per-location quantity:
 %   phase      resultant of the per-location preferred phases (NOT a coherence)
 %   coherence  the complex coherence itself
 % Both are shown because they can disagree, and a propagation claim should
 % survive either.
+%
+% Every panel gets its OWN colour limits and colourbar. R at v = infinity is
+% ~0.8-0.9 under 'phase' and ~0.07 under 'coherence', and the coherent row
+% sums over channels rather than averaging magnitudes, so the gains live on
+% completely different scales; one shared bar would flatten six panels to
+% show one. Judge each panel against its own significance outline, not against
+% its neighbour's colour.
 %
 % Pooled across animals with the pooled-z test; the outline is the corrected
 % significant region.
@@ -1014,32 +1334,50 @@ if DO_FIG7C
     % = it hurts, pink = it changes nothing.
     cmap_gain = cmap_ppy(256, MAP_FAMILY);
 
-    est   = D.results.ESTIMATORS;
+    est = D.results.ESTIMATORS;
+    % Stimulus modes, in the order they are plotted. Field name in the .mat,
+    % then the row heading. No underscores in the headings: titles render
+    % through the TeX interpreter, which would eat them as subscripts.
+    smodes = { 'visual',          'Stimulus eccentricity  k*d'
+               'visual_coherent', 'Fovea-out, coherent  k*(d+D)'
+               'visual_arrival',  'Arrival at RF  k*(d+a)' };
+
+    % Row 1 = across cortex, rows 2-4 = the three stimulus geometries; within
+    % a row the columns are the estimators, so panels are filled in reading
+    % order for grid_pos.
     panels = {};
     for ie = 1:numel(est)
         C = D.results.C.(est{ie});
         panels{end+1} = struct('G', C.gain, 'sig', C.sig_pool, ...
-            'f', C.fHz(:)', 'v', C.speeds(:)', 'vunit','m/s', ...
+            'f', C.fHz(:)', 'v', C.speeds(:)', 'vunit','cm/s', ...
             'ttl', sprintf('Across cortex — %s', est{ie})); %#ok<SAGROW>
     end
-    for ie = 1:numel(est)
-        C = Sv.results.C.(est{ie}).visual;
-        panels{end+1} = struct('G', C.gain, 'sig', C.sig_pool_G, ...
-            'f', C.fHz(:)', 'v', C.speeds(:)', 'vunit','deg/s', ...
-            'ttl', sprintf('Along stimulus axis — %s', est{ie})); %#ok<SAGROW>
+    for im = 1:size(smodes,1)
+        for ie = 1:numel(est)
+            C = Sv.results.C.(est{ie}).(smodes{im,1});
+            panels{end+1} = struct('G', C.gain, 'sig', C.sig_pool_G, ...
+                'f', C.fHz(:)', 'v', C.speeds(:)', 'vunit','deg/s', ...
+                'ttl', sprintf('%s — %s', smodes{im,2}, est{ie})); %#ok<SAGROW>
+        end
     end
 
-    f7c = new_fig(19, 16.8);
-    M7c  = [2.0 1.4 2.2 3.0 3.4 2.2];
+    nrow7c = numel(panels) / numel(est);
+    f7c = new_fig(19, 27.5);
+    M7c  = [2.0 1.4 2.2 3.6 3.4 2.0];
     lets = panel_letters(numel(panels));
     for k = 1:numel(panels)
         Pk = panels{k};
-        ax = axes('Position', grid_pos(f7c, 2, 2, k, M7c)); hold(ax,'on');
+        ax = axes('Position', grid_pos(f7c, nrow7c, 2, k, M7c)); hold(ax,'on');
         panel_label(ax, lets{k}, FONT_SIZE_BIG);
         g  = Pk.G(isfinite(Pk.G));
         lo = min(quantile(g, 0.02),  -eps);
         hi = max(quantile(g, 0.998),  eps);
         cl = [lo 0 hi];        % two-slope, pinned at "de-rotation changes nothing"
+        % In the geometries where de-rotation never once helps, hi is the eps
+        % floor that keeps the upper arm of the two-slope map non-degenerate.
+        % Label that end 0, not 2.2x10^-16, which reads as a measurement and
+        % is not one.
+        cl_lab = cl; if hi <= eps, cl_lab(3) = 0; end
         % frequency on x, speed on y: the grid is stored [freq x speed], so
         % it is transposed to match, and so are the significance mask below
         % and the axis labels
@@ -1054,10 +1392,13 @@ if DO_FIG7C
         tidy(ax);
         % gain runs from ~-0.9 to ~+0.01, so plain decimals need four or five
         % places to say anything; powers of ten read at a glance
-        vec_colorbar(ax, cmap_gain, cl, 'Gain', true, sci_labels(cl));
+        vec_colorbar(ax, cmap_gain, cl, 'Gain', true, sci_labels(cl_lab));
     end
+    % Kept to three lines that each fit the heading width: supertitle wraps,
+    % and a wrapped caption pushes the first row of panels down the page.
     supertitle(f7c, {'De-rotation: does undoing a travelling delay make the map more coherent?', ...
-        'Colour = gain over the no-travel (v = infinity) fit; white outline = pooled-z significant across animals'});
+        'Rows = distance de-rotated by: cortical sheet, eccentricity, fovea-out (+RF), arrival at RF', ...
+        'Colour = gain over the no-travel (v = infinity) fit, scaled per panel; white outline = pooled-z significant'});
     save_fig(f7c, out_dir, 'fig07c_derotation');
 end
 
@@ -2155,6 +2496,32 @@ if isfield(S,'thresh_monkey') && isfield(S.thresh_monkey,'phase')
     thr = S.thresh_monkey.phase;
 end
 if isfield(S,'freq'), fq = S.freq(:)'; end
+end
+
+
+function P = load_null(filepath, perm_field, sub_field)
+% The [nPerm x nFreq] permutation curves behind the paired difference test.
+%
+% Figure 6 needs only the scalar threshold, so load_curve never reads these.
+% The paired test needs the per-permutation curves themselves, because it
+% differences hypothesis pairs permutation by permutation - which is what
+% makes the Jensen advantage cancel. The regression files nest theirs one
+% level down, hence sub_field.
+%
+% Missing is not an error, for the same reason as in load_curve: the pair is
+% drawn without a null and without bars rather than stopping the figure.
+P = [];
+if ~isfile(filepath), return; end
+S = load(filepath);
+if ~isfield(S, perm_field), return; end
+P = S.(perm_field);
+if nargin > 2 && ~isempty(sub_field)
+    if isstruct(P) && isfield(P, sub_field), P = P.(sub_field); else, P = []; end
+end
+% a vector here would be a per-frequency summary, not the per-permutation
+% curves the paired test needs - refuse it rather than difference the wrong
+% thing
+if ~isnumeric(P) || ~ismatrix(P) || isvector(P), P = []; end
 end
 
 

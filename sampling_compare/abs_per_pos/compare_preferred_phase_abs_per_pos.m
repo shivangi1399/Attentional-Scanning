@@ -167,7 +167,8 @@ for ch = 1:nCh
             ph_p     = a_ph.phase_all(all_idx_hm(mask), f, ch);
             miss_p   = ~hit_labels(mask);
             ph_inv   = ph_p;
-            ph_inv(miss_p) = mod(ph_p(miss_p) + pi, 2*pi) - pi;
+            % + pi only: mod(x+pi,2*pi)-pi is the WRAP idiom and the phases are already wrapped, so it was a no-op
+            ph_inv(miss_p) = ph_p(miss_p) + pi;
             cplx_pos(p) = mean(exp(1i * ph_inv));
         end
         phi_pos   = angle(cplx_pos);
@@ -667,7 +668,8 @@ for a = 1:nAnimals
                 if sum(mk)<2, continue; end
                 ph_p=a_phd.phase_all(aidx_hm(mk),f,ch);
                 miss_p=~hlbl_hm(mk); ph_inv=ph_p;
-                ph_inv(miss_p)=mod(ph_p(miss_p)+pi,2*pi)-pi;
+                % + pi only: mod(x+pi,2*pi)-pi is the WRAP idiom and the phases are already wrapped, so it was a no-op
+                ph_inv(miss_p)=ph_p(miss_p)+pi;
                 cp(p)=mean(exp(1i*ph_inv));
             end
             pp=angle(cp); vp=~isnan(pp);

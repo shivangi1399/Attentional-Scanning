@@ -37,7 +37,12 @@ for perm = 1:permut_n
 
     % 2) ITC with inverted miss phases
     phase_combined = phase;
-    phase_combined(miss_idx, :) = mod(phase(miss_idx, :) + pi, 2*pi) - pi;
+        % + pi only. mod(x+pi,2*pi)-pi is the WRAP-into-[-pi,pi) idiom,
+        % and the phases are already wrapped, so it added pi and took it
+        % straight back off - the inversion was a no-op and this ITC was
+        % plain ITC over hits and misses pooled, blind to the labels.
+        % exp(1i*.) does not care that the result leaves [-pi,pi).
+    phase_combined(miss_idx, :) = phase(miss_idx, :) + pi;
 
     for foi = 1:nFreq
         itc_perm_complex(perm, foi) = mean(exp(1i * phase_combined(:, foi)));

@@ -126,7 +126,8 @@ if exist(data_file, 'file')
 
         % Invert miss phases by pi
         phase_inv = phase_ch;
-        phase_inv(miss_labels, :) = mod(phase_ch(miss_labels, :) + pi, 2*pi) - pi;
+        % + pi only: mod(x+pi,2*pi)-pi is the WRAP idiom and the phases are already wrapped, so it was a no-op
+        phase_inv(miss_labels, :) = phase_ch(miss_labels, :) + pi;
 
         % Complex mean — angle gives the preferred hit phase
         for f = 1:nFreq
@@ -659,7 +660,8 @@ for a = 1:nAnimals
         for ch = 1:a_nCh
             phase_ch  = a_ph.phase_all(a_all_idx, :, ch);
             phase_inv = phase_ch;
-            phase_inv(a_miss_labels, :) = mod(phase_ch(a_miss_labels, :) + pi, 2*pi) - pi;
+            % + pi only: mod(x+pi,2*pi)-pi is the WRAP idiom and the phases are already wrapped, so it was a no-op
+            phase_inv(a_miss_labels, :) = phase_ch(a_miss_labels, :) + pi;
             for f = 1:a_nFreq
                 hm_phase(ch, f) = angle(mean(exp(1i * phase_inv(:, f))));
             end
